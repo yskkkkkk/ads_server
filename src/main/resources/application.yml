@@ -20,3 +20,19 @@ management:
     web:
       exposure:
         include: health
+
+ads:
+  # 노출 토큰 서명 키. 서버에서는 ~/ads.env 의 TOKEN_SECRET 으로 반드시 바꿉니다.
+  token-secret: ${TOKEN_SECRET:local-dev-secret-change-me}
+  serving:
+    timeout-ms: 50                 # 광고 고르기 시간 예산. 넘기면 광고 없이 응답
+    ad-positions: [2, 6]           # 광고가 들어가는 자리(1부터 셈)
+    list-size: 8                   # 응답 목록 길이(일반 + 광고)
+    reserve-cpc: 100               # 최저가(원). 입찰가가 이보다 낮으면 탈락, 낙찰가도 이보다 낮지 않음
+    min-increment: 10              # 2등가에 더하는 최소 단위(원)
+    personalization-boost: 2.0     # 최근 본 브랜드와 같은 광고의 pCTR 배수
+    frequency-cap-per-hour: 3      # 같은 사용자에게 같은 광고 1시간 최대 노출 수
+    circuit-failure-threshold: 3   # 연속 실패 몇 번에 서킷을 열지
+    circuit-open-ms: 10000         # 서킷을 열어 두는 시간
+    max-debug-delay-ms: 200        # 장애 주입(debugDelayMs) 상한
+    catalog-refresh-ms: 5000       # 광고 카탈로그 스냅샷 새로 고침 주기

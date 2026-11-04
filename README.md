@@ -12,7 +12,7 @@
 [서빙 경로: 동기, 50ms 예산]                                        단계, 패키지
   데모 페이지 ── GET /ads?slot&category&userId ──▶ 광고 서버          1  serving/
      ① 후보 추리기  카테고리 일치, 예산 남음, 소진 표시 없음, 피로도 상한 미만
-     ② 예측        pCTR = 기본값 × 사용자 신호 보정(최근 본 카테고리)
+     ② 예측        pCTR = 기본값 × 사용자 신호 보정(최근 본 브랜드)
      ③ 랭킹        점수 = eCPM(입찰가 × pCTR × 1000) × 플랫폼 가중치(마진, 프로모션)
      ④ 옥션        2등가: 낙찰 CPC = 2등 점수 ÷ (내 pCTR × 1000 × 내 가중치) + 10원, 최저가 이상
      ⑤ 블렌딩      일반 상품 목록 2, 6번째 칸에 광고, 같은 상품 중복 제거
@@ -46,14 +46,15 @@ CLAUDE.md 3장의 개념을 전부 올립니다. 구현하지 않는 개념도 �
 
 | 개념 | 어떻게 만져 보나 | 상태 |
 |---|---|---|
-| 입찰가 1등 ≠ 광고 1등, eCPM (3-3, 3-12) | 입찰가가 가장 높은 광고가 pCTR 때문에 지는 시나리오 | 예정 |
-| 2등가 옥션, 최저가 (3-4) | 낙찰 CPC가 자기 입찰가보다 낮게 나오는 예, 최저가 미달 광고 탈락 | 예정 |
-| 퍼스트파티 데이터 반영 (3-12) | pCTR 사용자 신호 보정을 켜고 끌 때 1등이 바뀌는 예 | 예정 |
-| 다목적 랭킹: 마진, 프로모션 (3-12) | 플랫폼 가중치를 올리면 순위가 바뀌는 예 | 예정 |
-| 블렌딩, 중복 제거 (3-12) | 광고 상품이 일반 목록에도 있으면 한 번만 보임 | 예정 |
-| 광고 피로도, frequency cap (3-12) | 같은 사용자에게 같은 광고가 상한을 넘으면 안 나감 | 예정 |
-| 노출 토큰: 모든 이벤트는 서빙 결정에 묶인다 (3-2) | 1단계 발급, 2·3단계 검증 | 예정 |
-| 서빙 시간 예산, 채움률, 서킷 브레이커 (3-2) | 50ms 초과 시 일반 상품만 응답, 연속 초과 시 서킷 열림 | 예정 |
+| 입찰가 1등 ≠ 광고 1등, eCPM (3-3, 3-12) | 입찰가 1000원 runway가 500원 streetfit에게 짐 (`Auction`) | 완료 |
+| 2등가 옥션, 최저가 (3-4) | streetfit은 입찰가 500원인데 410원을 냄, 입찰가 80원 daily는 탈락 (`Auction`, `CandidateFilter`) | 완료 |
+| 퍼스트파티 데이터 반영 (3-12) | runway를 본 사용자에게는 runway가 1등 (`Prediction`, `UserSignals`) | 완료 |
+| 다목적 랭킹: 마진, 프로모션 (3-12) | eCPM 8,000인 mono가 가중치 1.5로 runway(10,000)를 이김 (`Auction`) | 완료 |
+| 블렌딩, 중복 제거 (3-12) | 광고 상품 102, 103이 일반 목록에서 빠짐 (`Blender`) | 완료 |
+| 광고 피로도, frequency cap (3-12) | 상한을 넘은 광고는 그 사용자에게 안 나감 (`CandidateFilter`). 횟수 올리기는 2단계 | 완료 |
+| 후보 스냅샷(메모리 카탈로그) | 서빙은 DB를 부르지 않고 5초마다 새로 읽은 스냅샷을 씀 (`Catalog`) | 완료 |
+| 노출 토큰: 모든 이벤트는 서빙 결정에 묶인다 (3-2) | 광고마다 HMAC 서명 토큰 발급, 토큰 안의 CPC = 낙찰 CPC (`ImpressionTokens`). 검증은 2·3단계 | 완료 |
+| 서빙 시간 예산, 채움률, 서킷 브레이커 (3-2) | `debugDelayMs=80`이면 일반 상품만 응답, 3번 연속이면 서킷 열림 (`ServingService`, `CircuitBreaker`) | 완료 |
 | 원격 저장소 왕복 시간 | 기동 로그 `[latency]`(`common/LatencyProbe`) | 완료 |
 
 ### 측정 (2단계)
@@ -124,6 +125,42 @@ main에 머지하면 GitHub Actions가 테스트 → 이미지 push(GHCR) → �
 배포 로그 마지막에 서버 ↔ DB, Redis 왕복 시간(`[latency]`), 컨테이너 메모리, 서버 CPU 아키텍처가 찍힙니다.
 서버 준비와 구성은 [docs/pam-infra.md](./docs/pam-infra.md) 5장에 있습니다.
 
-## 장애 시나리오
+## 해 보기
 
-1단계부터 단계마다 추가합니다. 실행 방법은 그때 이 장에 적습니다.
+### 1단계: 서빙
+
+앱을 띄운 뒤(`docker compose up -d postgres redis && ./gradlew bootRun`) 차례로 호출해 봅니다.
+응답의 `items`는 사용자가 보는 목록, `auction`은 그 뒤에서 일어난 경매표입니다. 시드 숫자는 `src/main/resources/db/migration/V2__seed.sql` 머리 주석에 있습니다.
+
+```bash
+# 1) 처음 온 사용자. 입찰가 1등 runway(1000원)가 지고 streetfit(410원), mono(344원)가 낙찰. 2, 6번째 칸이 광고
+curl -s 'localhost:8080/ads?category=shoes&userId=u1' | python3 -m json.tool
+```
+
+```bash
+# 2) u1이 runway 상품을 봤다는 퍼스트파티 신호를 남기고 다시 요청. runway가 1등(760원)
+curl -s -X POST 'localhost:8080/signals/viewed-brand?userId=u1&brand=runway'
+curl -s 'localhost:8080/ads?category=shoes&userId=u1' | python3 -m json.tool
+```
+
+```bash
+# 3) 같은 요청, 개인화만 끔. 다시 streetfit이 1등
+curl -s 'localhost:8080/ads?category=shoes&userId=u1&personalize=false' | python3 -m json.tool
+```
+
+```bash
+# 4) 저장소가 80ms 느려졌다고 가정(장애 주입). 시간 예산 50ms를 넘겨 광고 없이 일반 상품만 응답(outcome: TIMEOUT)
+curl -s 'localhost:8080/ads?category=shoes&userId=u1&debugDelayMs=80' | python3 -m json.tool
+```
+
+```bash
+# 5) 4)를 두 번 더 하면 서킷이 열림(CIRCUIT_OPEN). 10초 동안은 지연 없이도 광고를 조회하지 않음
+curl -s 'localhost:8080/ads?category=shoes&userId=u1' | python3 -m json.tool
+```
+
+```bash
+# 6) 채움률: 요청한 광고 자리 중 채운 비율, 결과별 건수, 서킷 상태
+curl -s 'localhost:8080/serving/stats' | python3 -m json.tool
+```
+
+자동 테스트로 같은 내용을 확인하려면 `./gradlew test --tests 'ads.serving.*'`를 실행합니다. 테스트 이름이 곧 시나리오 이름입니다.

@@ -167,6 +167,7 @@ DB_URL=jdbc:postgresql://<Neon 호스트>/<새 데이터베이스>?sslmode=requi
 DB_USERNAME=<Neon 사용자>
 DB_PASSWORD=<Neon 비밀번호>
 REDIS_URL=rediss://default:<Upstash 비밀번호>@<Upstash 호스트>:6379
+TOKEN_SECRET=<임의의 긴 문자열, 노출 토큰 서명 키>
 ```
 
 `chmod 600 ~/ads.env`로 다른 사용자가 읽지 못하게 둡니다.
