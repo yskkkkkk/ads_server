@@ -151,12 +151,25 @@ PAM의 `deploy-backend.yml` 구조(빌드 → GHCR push → SSH pull/run → 오
 | 할 일 | 누가 |
 |---|---|
 | 이 저장소에 `OCI_HOST`, `OCI_USER`, `OCI_SSH_PRIVATE_KEY` 시크릿 등록 | 사용자 |
-| 서버에서 `uname -m`으로 CPU 아키텍처 확인 | 사용자 |
 | Neon에 이 저장소용 새 데이터베이스 생성 | 사용자 |
-| 서버에 `~/ads.env` 작성(DB, Redis 연결 값) | 사용자 |
+| 서버에 `~/ads.env` 작성(아래 형식) | 사용자 |
 | PAM 저장소의 `deploy-backend.yml` 비활성화 | 에이전트(PAM 저장소 PR) |
 | 서버에서 `pam-backend` 컨테이너 정지, 삭제 | 사용자 |
-| 뼈대, Dockerfile, 배포 워크플로 작성 | 에이전트 |
+| 뼈대, Dockerfile, 배포 워크플로 작성 | 에이전트(0단계 PR) |
+
+CPU 아키텍처는 따로 확인하지 않아도 됩니다. 이미지를 amd64, arm64 둘 다 만들고, 배포 로그 마지막에 `uname -m`이 찍힙니다.
+배포 워크플로는 `pam-backend` 컨테이너가 떠 있으면 8080 충돌을 막기 위해 실패로 끝납니다.
+
+`~/ads.env` 형식(값은 이 저장소 어디에도 쓰지 않습니다):
+
+```
+DB_URL=jdbc:postgresql://<Neon 호스트>/<새 데이터베이스>?sslmode=require
+DB_USERNAME=<Neon 사용자>
+DB_PASSWORD=<Neon 비밀번호>
+REDIS_URL=rediss://default:<Upstash 비밀번호>@<Upstash 호스트>:6379
+```
+
+`chmod 600 ~/ads.env`로 다른 사용자가 읽지 못하게 둡니다.
 
 ---
 
@@ -173,7 +186,7 @@ PAM의 `deploy-backend.yml` 구조(빌드 → GHCR push → SSH pull/run → 오
 
 | 항목 | 확인 방법 |
 |---|---|
-| 서버에서 도는 이미지의 CPU 아키텍처 | 5-3의 명령 (0단계 첫 배포 전) |
+| 서버 CPU 아키텍처 | 0단계 배포 로그의 `uname -m` |
 | 서버 ↔ Neon, Upstash 왕복 시간 | 5-6 (0단계) |
 | 1GB 서버에서 앱 메모리 사용량과 적절한 힙 상한 | 0단계 배포 후 `docker stats` |
 | SSH 비밀번호 인증이 꺼져 있는지 | 서버에서 `sudo sshd -T \| grep passwordauthentication` |

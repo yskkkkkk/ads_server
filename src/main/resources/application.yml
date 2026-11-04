@@ -1,0 +1,22 @@
+# 기본값은 로컬 docker compose 기준입니다.
+# 서버에서는 ~/ads.env 의 환경 변수(DB_URL, DB_USERNAME, DB_PASSWORD, REDIS_URL)로 덮어씁니다.
+spring:
+  application:
+    name: ads-server
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/ads}
+    username: ${DB_USERNAME:ads}
+    password: ${DB_PASSWORD:ads}
+    hikari:
+      # 1GB 서버, Neon 무료 플랜 연결 수를 고려해 작게 둡니다.
+      maximum-pool-size: 5
+  data:
+    redis:
+      # Upstash는 rediss://default:<비밀번호>@<호스트>:6379 형식(TLS)입니다.
+      url: ${REDIS_URL:redis://localhost:6379}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
