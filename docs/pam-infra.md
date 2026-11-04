@@ -94,7 +94,7 @@ PAM 서버를 그대로 씁니다. 새로 만드는 것은 컨테이너 하나�
 
 1GB 서버에 JVM 두 개는 올라가지 않습니다. 순서가 중요합니다.
 
-1. PAM 저장소의 `.github/workflows/deploy-backend.yml`을 비활성화합니다. 그대로 두면 PAM 백엔드 코드가 main에 들어갈 때마다 `pam-backend` 컨테이너가 다시 떠서 8080을 차지합니다.
+1. ~~PAM 저장소의 `.github/workflows/deploy-backend.yml` 자동 배포 끄기~~ **완료(PAM PR #178).** 트리거를 수동 실행(`workflow_dispatch`)으로 바꿨습니다. 수동으로 다시 돌리면 `pam-backend`가 8080을 차지하므로, 그 전에 이 저장소의 컨테이너를 먼저 내립니다.
 2. 서버에서 `pam-backend` 컨테이너를 정지, 삭제합니다.
 3. 그다음에 이 저장소의 컨테이너를 띄웁니다.
 
