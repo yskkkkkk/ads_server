@@ -206,7 +206,19 @@ git config user.email "fb1014@naver.com"
 
 ---
 
-## 5. 참고 자료
+## 5. 기존 pick-a-meme 인프라 활용
+
+이 저장소는 같은 소유자가 운영하던 pick-a-meme(PAM)의 서버와 외부 서비스를 이어받습니다. 자세한 내용은 `docs/pam-infra.md`에 있고, 작업 전에 지킬 것만 여기 적습니다.
+
+- PAM 코드는 Kotlin입니다. 복사하지 말고 규칙과 순서만 가져옵니다(Redis 연산은 Lua로 묶기, 커밋 후 ACK, 적용된 Flyway 파일 수정 금지).
+- 로컬 단계에서는 Neon, Upstash에 붙지 않습니다. compose의 Postgres, Redis만 씁니다.
+- 배포한다면 PAM 이름(`pam-backend`, `pam.env`, `pam:` 키 접두사)을 재사용하지 않습니다. GHCR 정리 작업이 같은 이름의 이미지를 지웁니다.
+- 서버는 RAM 1GB입니다. PAM 컨테이너를 내린 뒤에 띄웁니다.
+- 서버 IP, 연결 문자열, 토큰은 어떤 파일에도 쓰지 않습니다.
+
+---
+
+## 6. 참고 자료
 
 - IAB/MRC Retail Media Measurement Guidelines (2024.01): https://www.iab.com/wp-content/uploads/2024/01/IAB_Retail_Media_Measurement_Guidelines_January2024.pdf
 - IAB Europe Retail Media Measurement Standards (2024.04): https://iabeurope.eu/wp-content/uploads/IAB-Europe-Retail-Media-Measurement-Standards-Final-V1-April-2024.pdf
