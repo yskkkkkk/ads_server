@@ -159,10 +159,35 @@ git config user.email "fb1014@naver.com"
 ### 기술
 - Java 21, Spring Boot 3, Postgres, Redis. `docker compose up`으로 로컬에서 전부 실행
 - 큐: Redis Streams. 스트림을 `hash(adId) % 4`개로 나눠 Kafka 파티션을 흉내 냅니다
-- 배포는 하지 않습니다(마지막 선택 단계)
+- 서버 구성은 PAM과 같습니다(Cloudflare → Nginx → Spring Boot 컨테이너, Neon, Upstash). 자세한 것은 5장
+
+### 코드 구조
+
+PAM의 서버 구성은 그대로 따르지만, 코드 구조는 PAM(Kotlin 멀티 모듈 클린 아키텍처)을 따르지 않습니다.
+이유와 버린 것은 `docs/tradeoffs.md`의 "코드 구조" 항목에 있습니다. 바꾸고 싶으면 그 항목부터 고칩니다.
+
+- **Gradle 단일 모듈.** 패키지는 계층(controller, service, repository)이 아니라 광고 한 건의 흐름 단계로 나눕니다.
+  ```
+  serving/    GET /ads: 후보 필터, 랭킹, 옥션, 노출 토큰 발급
+  event/      노출, 클릭 수집 → 토큰 검증 → 스트림 적재
+  billing/    과금 컨슈머(3-11)
+  reconcile/  대사 배치
+  common/     토큰 서명, 파티션 번호 계산처럼 두 단계 이상이 같이 쓰는 것만
+  ```
+  "클릭 한 건이 어떻게 과금되나"를 따라갈 때 `billing/` 한 폴더만 열면 되게 합니다.
+- **규칙은 스프링 없는 순수 클래스로 뺍니다.** 옥션 계산, 3-11의 과금 판정처럼 "입력이 같으면 결과가 같은" 규칙은 DB, Redis, 스프링을 모르는 클래스에 둡니다.
+  4장의 기본 예시 표(c1~c7)를 DB 없이 단위 테스트로 그대로 돌릴 수 있어야 합니다. PAM 클린 아키텍처에서 가져오는 것은 이 한 가지입니다.
+- **DB 접근은 `JdbcTemplate`으로 SQL을 코드에 그대로 씁니다.** JPA는 쓰지 않습니다.
+  과금의 핵심이 "장부 INSERT(유니크) + 예산 UPDATE를 한 트랜잭션으로"인데, JPA는 쿼리가 나가는 시점(flush)이 숨겨져 유니크 위반이 어디서 터지는지 코드에서 보이지 않습니다.
+- **인터페이스는 구현이 실제로 둘 이상일 때만 만듭니다.** 예: 대조 실험의 "잘못된 컨슈머 구성"과 "파티션 구성".
+- 스키마는 Flyway로 관리합니다. 적용된 마이그레이션 파일은 고치지 않습니다(`docs/pam-infra.md` 3-4).
 
 ### 범위 (이 순서로)
 
+0. **뼈대와 첫 배포** (기능보다 먼저)
+   - Spring Boot 뼈대, `/actuator/health`, Flyway, `docker compose`(앱 + Postgres + Redis), Dockerfile, 배포 워크플로
+   - main에 머지하면 서버에 자동 배포되고, PAM API 서브도메인으로 `/actuator/health`가 응답하는 것까지가 완료 기준입니다
+   - 서버 위에서 측정할 것: 앱 메모리(1GB 서버), 서버 ↔ Neon, Upstash 왕복 시간. 이 숫자가 1~4단계 설계를 바꿀 수 있습니다(5장)
 1. **서빙**: `GET /ads?slot&category`
    - 후보 필터(예산 남음, 카테고리, Redis 소진 표시 확인)
    - 랭킹: eCPM = 입찰가 × pCTR × 1000 (pCTR은 광고별 고정값)
@@ -172,6 +197,8 @@ git config user.email "fb1014@naver.com"
 2. **이벤트 수집**: `POST /events/impression`, `GET /events/click?token` (원래 상품 페이지로 리다이렉트) → 토큰 검증 → 스트림 적재
 3. **과금 컨슈머** (가장 중요): 3-11의 규칙 전부. 예산 소진 시 Redis에 소진 표시
 4. **대사 배치**: 클릭 이벤트 수, 과금 건수와 무과금 사유별 건수, 장부 금액, 광고별 예산 차감액이 서로 맞는지 비교 리포트
+
+0단계 이후에는 단계마다 PR을 머지하면 서버에 바로 올라갑니다. 각 단계의 완료 기준은 "로컬 시나리오 테스트 통과 + 서버에서 해당 API 동작 확인" 두 가지입니다.
 
 ### 해설 산출물 (코드만큼 중요)
 - `README.md`: 전체 흐름도(서빙 경로와 측정 경로), 실행 방법, 시나리오 실행 방법
@@ -202,11 +229,27 @@ git config user.email "fb1014@naver.com"
 - 예산 소진 표시가 늦게 반영되는 동안 생기는 초과 집행 금액 측정
 
 ### 하지 않는 것
-광고주 UI, 머신러닝 예측 모델, 인증, 배포, 다중 리전
+광고주 UI, 머신러닝 예측 모델, 인증, 다중 리전
 
 ---
 
-## 5. 참고 자료
+## 5. 기존 pick-a-meme 인프라 활용
+
+이 저장소는 같은 소유자가 운영하던 pick-a-meme(PAM)의 서버와 외부 서비스를 이어받습니다. 자세한 내용은 `docs/pam-infra.md`에 있고, 작업 전에 지킬 것만 여기 적습니다.
+
+- PAM 코드는 Kotlin입니다. 복사하지 말고 규칙과 순서만 가져옵니다(Redis 연산은 Lua로 묶기, 커밋 후 ACK, 적용된 Flyway 파일 수정 금지).
+- 로컬과 테스트에서는 Neon, Upstash에 붙지 않습니다. compose의 Postgres, Redis만 씁니다. 서버 배포본만 Neon, Upstash를 씁니다.
+- 배포는 0단계에서 시작하고, 이후 main 머지마다 서버에 올라갑니다. 마지막에 몰아서 하지 않습니다.
+- PAM 이름(`pam-backend`, `pam.env`, `pam:` 키 접두사)을 재사용하지 않습니다. GHCR 정리 작업이 같은 이름의 이미지를 지웁니다.
+- PAM은 서버(백엔드 컨테이너와 배포 워크플로)만 내립니다. Neon, Upstash, R2, Vercel의 PAM 자원은 지우지 않고 둡니다. 이 저장소의 테이블은 Neon에 새 데이터베이스를 만들어 씁니다.
+- 도메인은 PAM의 API 서브도메인을 그대로 이어 씁니다. 기존 Nginx 설정과 인증서를 그대로 쓰므로 앱은 호스트의 8080 포트로 띄웁니다.
+- 서버는 RAM 1GB입니다. PAM 컨테이너를 내린 뒤에 띄우고, JVM 힙 상한을 명시합니다.
+- 서버(춘천)와 Neon, Upstash(싱가포르)는 리전이 다릅니다. 서빙 경로(50ms 안에 끝나야 함)에서 원격 저장소를 매 요청 동기로 부르면 시간을 넘길 수 있습니다. 0단계에서 왕복 시간을 재고 서빙 설계에 반영합니다.
+- 서버 IP, 연결 문자열, 토큰은 어떤 파일에도 쓰지 않습니다.
+
+---
+
+## 6. 참고 자료
 
 - IAB/MRC Retail Media Measurement Guidelines (2024.01): https://www.iab.com/wp-content/uploads/2024/01/IAB_Retail_Media_Measurement_Guidelines_January2024.pdf
 - IAB Europe Retail Media Measurement Standards (2024.04): https://iabeurope.eu/wp-content/uploads/IAB-Europe-Retail-Media-Measurement-Standards-Final-V1-April-2024.pdf
