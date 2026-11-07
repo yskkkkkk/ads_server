@@ -38,13 +38,15 @@ public class Catalog {
 
     public record Snapshot(Map<String, List<Ad>> adsByCategory,
                            Map<String, List<Product>> productsByCategory,
+                           Map<Long, Ad> adsById,
+                           Map<Long, Product> productsById,
                            Set<Long> exhaustedAdIds,
                            Instant loadedAt) {
     }
 
     private final JdbcTemplate jdbc;
     private final StringRedisTemplate redis;
-    private volatile Snapshot snapshot = new Snapshot(Map.of(), Map.of(), Set.of(), Instant.EPOCH);
+    private volatile Snapshot snapshot = new Snapshot(Map.of(), Map.of(), Map.of(), Map.of(), Set.of(), Instant.EPOCH);
 
     public Catalog(JdbcTemplate jdbc, StringRedisTemplate redis) {
         this.jdbc = jdbc;
@@ -81,6 +83,8 @@ public class Catalog {
             snapshot = new Snapshot(
                     ads.stream().collect(Collectors.groupingBy(Ad::category)),
                     products.stream().collect(Collectors.groupingBy(Product::category)),
+                    ads.stream().collect(Collectors.toUnmodifiableMap(Ad::id, a -> a)),
+                    products.stream().collect(Collectors.toUnmodifiableMap(Product::id, p -> p)),
                     exhaustedIds,
                     Instant.now());
         } catch (RuntimeException e) {

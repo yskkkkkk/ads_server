@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>데모 쇼핑몰 (측정 장치)</title>
+<link rel="stylesheet" href="demo.css">
+</head>
+<body>
+<main>
+  <h1>데모 쇼핑몰</h1>
+  <p class="note">매체 화면이 아니라 측정 장치입니다. 광고가 그려지고(RENDERED), 보이고(VIEWABLE), 눌리는(CLICK) 순간 브라우저가 무엇을 보내는지,
+    그리고 그중 서버에 실제로 도착한 것이 몇 개인지 비교합니다. 설명은 README "해 보기 → 2단계".</p>
+
+  <fieldset>
+    <legend>요청</legend>
+    <label>사용자 <input type="text" id="userId" value="demo-user" size="12"></label>
+    <label>카테고리 <select id="category"><option>shoes</option><option>bags</option></select></label>
+    <label><input type="checkbox" id="personalize" checked> 개인화(최근 본 브랜드로 pCTR 보정)</label>
+    <button id="reload">목록 새로 받기</button>
+    <div id="outcome"></div>
+  </fieldset>
+
+  <fieldset>
+    <legend>광고 클릭을 보내는 방법</legend>
+    <label><input type="radio" name="mode" value="redirect" checked> 클릭 URL(서버가 기록 후 리다이렉트)</label>
+    <label><input type="radio" name="mode" value="beacon"> sendBeacon 후 바로 이동</label>
+    <label><input type="radio" name="mode" value="fetch"> fetch 후 바로 이동(SDK처럼 모아서 150ms 뒤 전송)</label>
+    <label><input type="checkbox" id="chain" checked> 상품 페이지 URL에 광고 토큰 이어 붙이기(파라미터 체이닝)</label>
+  </fieldset>
+
+  <fieldset>
+    <legend>브라우저가 보낸 수 vs 서버에 도착한 수</legend>
+    <table>
+      <thead><tr><th>이벤트</th><th>브라우저 보냄</th><th>서버 도착</th><th>유실</th><th>중복 제외 후</th></tr></thead>
+      <tbody id="compare"></tbody>
+    </table>
+    <button id="measureStart">측정 시작(여기서부터 셈)</button>
+    <button id="measureRefresh">서버 숫자 다시 읽기</button>
+  </fieldset>
+
+  <fieldset>
+    <legend>이 브라우저가 보낸 이벤트</legend>
+    <div id="log"></div>
+  </fieldset>
+
+  <div id="list"></div>
+</main>
+<script src="demo.js"></script>
+</body>
+</html>
