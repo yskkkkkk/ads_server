@@ -2,6 +2,7 @@ package ads.serving;
 
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -15,6 +16,8 @@ import org.springframework.web.bind.annotation.RestController;
  *        "사용자가 이 브랜드 상품을 봤다"는 퍼스트파티 신호를 남깁니다. 개인화 pCTR 보정에 쓰입니다.
  *   GET  /serving/stats
  *        채움률(fill rate), 결과별 건수, 서킷 브레이커 상태.
+ *   GET  /products/{id}
+ *        상품 한 건(데모 상품 페이지용).
  */
 @RestController
 public class ServingController {
@@ -23,10 +26,12 @@ public class ServingController {
 
     private final ServingService serving;
     private final UserSignals userSignals;
+    private final Catalog catalog;
 
-    public ServingController(ServingService serving, UserSignals userSignals) {
+    public ServingController(ServingService serving, UserSignals userSignals, Catalog catalog) {
         this.serving = serving;
         this.userSignals = userSignals;
+        this.catalog = catalog;
     }
 
     @GetMapping("/ads")
@@ -53,5 +58,11 @@ public class ServingController {
     @GetMapping("/serving/stats")
     public ServingService.Stats stats() {
         return serving.stats();
+    }
+
+    @GetMapping("/products/{id}")
+    public ResponseEntity<Product> product(@PathVariable long id) {
+        Product product = catalog.snapshot().productsById().get(id);
+        return product == null ? ResponseEntity.notFound().build() : ResponseEntity.ok(product);
     }
 }
