@@ -1,0 +1,352 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "광고 서빙 한 번: GET /ads",
+    "locale": "ko",
+    "output": "docs/diagrams/serving.html",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/yskkkkkk/ads_server",
+      "provider": "github",
+      "revision": "280eef5634e1a381569a2e09c474030ef56eff19"
+    },
+    "legend": {
+      "entries": {
+        "dashed": {
+          "label": "대체 경로(광고 없이 응답)"
+        }
+      }
+    }
+  },
+  "participants": [
+    {
+      "id": "page",
+      "type": "frontend",
+      "label": "데모 페이지",
+      "sublabel": "매체 화면"
+    },
+    {
+      "id": "controller",
+      "type": "backend",
+      "label": "ServingController",
+      "sublabel": "GET /ads",
+      "sources": [
+        {
+          "path": "src/main/java/ads/serving/ServingController.java",
+          "line": 37,
+          "end_line": 47,
+          "label": "GET /ads"
+        }
+      ]
+    },
+    {
+      "id": "service",
+      "type": "backend",
+      "label": "ServingService",
+      "sublabel": "50ms 시간 제한",
+      "sources": [
+        {
+          "path": "src/main/java/ads/serving/ServingService.java",
+          "line": 85,
+          "end_line": 136,
+          "label": "serve()"
+        },
+        {
+          "path": "src/main/java/ads/serving/ServingService.java",
+          "line": 139,
+          "end_line": 157,
+          "label": "select()"
+        },
+        {
+          "path": "src/main/java/ads/serving/Blender.java",
+          "line": 41,
+          "end_line": 63,
+          "label": "Blender.blend()"
+        }
+      ]
+    },
+    {
+      "id": "catalog",
+      "type": "database",
+      "label": "Catalog",
+      "sublabel": "메모리 스냅샷",
+      "sources": [
+        {
+          "path": "src/main/java/ads/serving/Catalog.java",
+          "line": 60,
+          "end_line": 93,
+          "label": "5초마다 refresh()"
+        }
+      ]
+    },
+    {
+      "id": "redis",
+      "type": "database",
+      "label": "Redis",
+      "sublabel": "사용자 신호",
+      "sources": [
+        {
+          "path": "src/main/java/ads/serving/UserSignals.java",
+          "line": 39,
+          "end_line": 56,
+          "label": "MGET 한 번"
+        }
+      ]
+    },
+    {
+      "id": "rules",
+      "type": "backend",
+      "label": "순수 규칙",
+      "sublabel": "필터 · 예측 · 옥션",
+      "sources": [
+        {
+          "path": "src/main/java/ads/serving/CandidateFilter.java",
+          "line": 38,
+          "end_line": 57,
+          "label": "CandidateFilter"
+        },
+        {
+          "path": "src/main/java/ads/serving/Prediction.java",
+          "line": 25,
+          "end_line": 30,
+          "label": "Prediction"
+        },
+        {
+          "path": "src/main/java/ads/serving/Auction.java",
+          "line": 48,
+          "end_line": 64,
+          "label": "Auction"
+        }
+      ]
+    },
+    {
+      "id": "tokens",
+      "type": "security",
+      "label": "ImpressionTokens",
+      "sublabel": "HMAC 서명",
+      "sources": [
+        {
+          "path": "src/main/java/ads/common/ImpressionTokens.java",
+          "line": 46,
+          "end_line": 51,
+          "label": "issue()"
+        }
+      ]
+    }
+  ],
+  "segments": [
+    {
+      "from": 150,
+      "to": 296,
+      "label": "요청 · 스냅샷 읽기"
+    },
+    {
+      "from": 300,
+      "to": 500,
+      "label": "광고 고르기 · 50ms 안"
+    },
+    {
+      "from": 510,
+      "to": 672,
+      "label": "블렌딩 · 토큰 · 응답"
+    },
+    {
+      "from": 684,
+      "to": 780,
+      "label": "50ms를 넘기면"
+    }
+  ],
+  "messages": [
+    {
+      "id": "request",
+      "from": "page",
+      "to": "controller",
+      "y": 160,
+      "label": "GET /ads",
+      "variant": "emphasis"
+    },
+    {
+      "id": "serve",
+      "from": "controller",
+      "to": "service",
+      "y": 188,
+      "label": "serve()",
+      "variant": "emphasis"
+    },
+    {
+      "id": "snapshot",
+      "from": "service",
+      "to": "catalog",
+      "y": 216,
+      "label": "snapshot()",
+      "variant": "default",
+      "note": "DB 대신 5초마다 새로 읽은 사본"
+    },
+    {
+      "id": "snapshot-rows",
+      "from": "catalog",
+      "to": "service",
+      "y": 284,
+      "label": "광고 · 상품 목록",
+      "variant": "return"
+    },
+    {
+      "id": "signals",
+      "from": "service",
+      "to": "redis",
+      "y": 312,
+      "label": "MGET 신호",
+      "variant": "default",
+      "note": "최근 본 브랜드 + 노출 수, 왕복 1번"
+    },
+    {
+      "id": "signals-reply",
+      "from": "redis",
+      "to": "service",
+      "y": 380,
+      "label": "브랜드 · 노출 수",
+      "variant": "return"
+    },
+    {
+      "id": "select",
+      "from": "service",
+      "to": "rules",
+      "y": 408,
+      "label": "필터 → pCTR → 옥션",
+      "variant": "emphasis",
+      "note": "예산·최저가·피로도 제외 → pCTR → eCPM × 가중치 순 → 2등가"
+    },
+    {
+      "id": "winners",
+      "from": "rules",
+      "to": "service",
+      "y": 490,
+      "label": "낙찰 2개 + 경매표",
+      "variant": "return"
+    },
+    {
+      "id": "issue",
+      "from": "service",
+      "to": "tokens",
+      "y": 522,
+      "label": "광고마다 issue()",
+      "variant": "security",
+      "note": "2·6번째 칸에 섞고 중복 상품 제거, 광고마다 HMAC 토큰"
+    },
+    {
+      "id": "token-reply",
+      "from": "tokens",
+      "to": "service",
+      "y": 604,
+      "label": "서명된 토큰",
+      "variant": "return"
+    },
+    {
+      "id": "result",
+      "from": "service",
+      "to": "controller",
+      "y": 632,
+      "label": "items + auction",
+      "variant": "return"
+    },
+    {
+      "id": "response",
+      "from": "controller",
+      "to": "page",
+      "y": 660,
+      "label": "200 JSON",
+      "variant": "return"
+    },
+    {
+      "id": "timeout",
+      "from": "service",
+      "to": "controller",
+      "y": 696,
+      "label": "일반 상품만",
+      "variant": "dashed",
+      "note": "연속 3번이면 서킷 OPEN, 10초간 조회 생략"
+    },
+    {
+      "id": "organic-response",
+      "from": "controller",
+      "to": "page",
+      "y": 766,
+      "label": "200 JSON(광고 없음)",
+      "variant": "return"
+    }
+  ],
+  "activations": [
+    {
+      "participant": "controller",
+      "from": 160,
+      "to": 666,
+      "type": "backend"
+    },
+    {
+      "participant": "service",
+      "from": 188,
+      "to": 638,
+      "type": "backend"
+    },
+    {
+      "participant": "catalog",
+      "from": 216,
+      "to": 290,
+      "type": "database"
+    },
+    {
+      "participant": "redis",
+      "from": 312,
+      "to": 386,
+      "type": "database"
+    },
+    {
+      "participant": "rules",
+      "from": 408,
+      "to": 496,
+      "type": "backend"
+    },
+    {
+      "participant": "tokens",
+      "from": 522,
+      "to": 610,
+      "type": "security"
+    },
+    {
+      "participant": "controller",
+      "from": 696,
+      "to": 772,
+      "type": "backend"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "왜 이 순서인가",
+      "items": [
+        "거르기가 먼저: 나갈 수 없는 광고가 2등 가격을 정하지 않게",
+        "랭킹은 입찰가가 아니라 eCPM × 플랫폼 가중치 순",
+        "낙찰가는 토큰에 담겨 나중에 클릭 과금의 근거가 됨"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "왜 DB를 부르지 않나",
+      "items": [
+        "서버(춘천)와 Neon, Upstash(싱가포르) 왕복이 50ms를 다 쓸 수 있음",
+        "모두에게 같은 데이터는 5초 스냅샷, 사용자별 데이터만 Redis 한 번",
+        "대가: 예산 소진 반영이 최대 5초 늦어 초과 집행이 생길 수 있음"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "50ms를 넘기면",
+      "items": [
+        "광고 자리도 일반 상품으로 채워 페이지는 완성",
+        "못 채운 자리는 채움률로 집계(곧 매출 손실)",
+        "연속 3번 실패 → 서킷 OPEN → 10초 뒤 한 번 시험(HALF_OPEN)"
+      ]
+    }
+  ]
+}

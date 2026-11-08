@@ -103,6 +103,18 @@ CLAUDE.md 3장의 개념을 전부 올립니다. 구현하지 않는 개념도 �
 | Affiliate (3-7) | 광고 서버가 아닌 별도 정산 흐름 |
 | 장기 정산 워크플로(Temporal) (3-9) | 한 DB 안에서 끝나는 클릭 과금에는 불필요 |
 
+## 도식
+
+개념을 설명하는 도식은 `docs/diagrams/`에 HTML로 둡니다(브라우저로 열면 확대, 경로 강조, 테마 전환이 됩니다).
+에이전트는 [Archify](https://github.com/tt-a1i/archify) 스킬을 **설치하지 않고** 세션마다 `v3.2.0`을 임시 폴더에 받아 이것으로 도식을 만듭니다. 방법과 그릴 목록은 [CLAUDE.md](./CLAUDE.md) 4장 "도식"에 있습니다.
+
+| 도식 | 단계 | 원본 |
+|---|---|---|
+| [광고 서빙 한 번: GET /ads](docs/diagrams/serving.html) (시퀀스) | 1 | `docs/diagrams/src/serving.sequence.json` |
+| [측정 경로: 노출과 클릭이 스트림에 쌓이기까지](docs/diagrams/measurement.html) (데이터 흐름) | 2 | `docs/diagrams/src/measurement.dataflow.json` |
+
+GitHub 화면에서는 HTML이 그림으로 보이지 않습니다. 파일을 내려받거나 저장소를 받은 뒤 브라우저로 여세요. 노드를 누르면 근거가 된 코드 위치가 나옵니다.
+
 ## 실행
 
 필요한 것: JDK 21, Docker.

@@ -1,0 +1,94 @@
+{
+  "schema_version": 1,
+  "diagram_type": "dataflow",
+  "meta": {
+    "title": "측정 경로: 노출과 클릭이 스트림에 쌓이기까지",
+    "locale": "ko",
+    "output": "docs/diagrams/measurement.html",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/yskkkkkk/ads_server",
+      "provider": "github",
+      "revision": "280eef5634e1a381569a2e09c474030ef56eff19"
+    }
+  },
+  "stages": [
+    { "label": "브라우저" },
+    { "label": "수집 API" },
+    { "label": "거르기 · 원자 처리" },
+    { "label": "Redis" },
+    { "label": "읽는 쪽" }
+  ],
+  "nodes": [
+    { "id": "page", "type": "frontend", "label": "데모 페이지", "sublabel": "RENDERED · VIEWABLE · CLICK", "stage": 0, "row": 0, "tag": "sendBeacon",
+      "sources": [
+        { "path": "src/main/resources/static/demo/demo.js", "line": 43, "end_line": 77, "label": "노출 두 종류" },
+        { "path": "src/main/resources/static/demo/demo.js", "line": 84, "end_line": 100, "label": "클릭 세 방식" }
+      ] },
+    { "id": "product", "type": "frontend", "label": "상품 페이지", "sublabel": "?adToken=…", "stage": 0, "row": 1, "tag": "랜딩",
+      "sources": [{ "path": "src/main/resources/static/demo/product.html", "line": 45, "end_line": 53, "label": "토큰 읽기" }] },
+    { "id": "bot", "type": "external", "label": "봇 · 크롤러", "sublabel": "User-Agent에 bot", "stage": 0, "row": 2, "tag": "GIVT" },
+    { "id": "controller", "type": "backend", "label": "EventController", "sublabel": "토큰 서명 확인", "stage": 1, "row": 1, "tag": "400 if 위조",
+      "sources": [
+        { "path": "src/main/java/ads/event/EventController.java", "line": 48, "end_line": 63, "label": "POST /events/impression" },
+        { "path": "src/main/java/ads/event/EventController.java", "line": 65, "end_line": 79, "label": "POST /events/click" },
+        { "path": "src/main/java/ads/event/EventController.java", "line": 81, "end_line": 98, "label": "GET /events/click 302" }
+      ] },
+    { "id": "collector", "type": "backend", "label": "EventCollector", "sublabel": "GIVT 거름 → Lua 한 번", "stage": 2, "row": 1, "tag": "원자 처리",
+      "sources": [
+        { "path": "src/main/java/ads/event/EventCollector.java", "line": 60, "end_line": 97, "label": "collect()" },
+        { "path": "src/main/java/ads/event/BotFilter.java", "line": 29, "end_line": 31, "label": "isGivt()" },
+        { "path": "src/main/resources/scripts/collect_event.lua", "line": 1, "end_line": 28, "label": "collect_event.lua" }
+      ] },
+    { "id": "keys", "type": "database", "label": "freq · dedupe 키", "sublabel": "ads:freq, ads:dedupe", "stage": 3, "row": 0, "tag": "SET NX · INCR",
+      "sources": [{ "path": "src/main/resources/scripts/collect_event.lua", "line": 13, "end_line": 25, "label": "중복 확인, 피로도" }] },
+    { "id": "streams", "type": "messagebus", "label": "ads:events:0~3", "sublabel": "hash(adId) % 4", "stage": 3, "row": 1, "tag": "파티션",
+      "sources": [{ "path": "src/main/java/ads/common/Partitions.java", "line": 25, "end_line": 36, "label": "Partitions" }] },
+    { "id": "counters", "type": "database", "label": "건수 카운터", "sublabel": "ads:count:*", "stage": 3, "row": 2, "tag": "accepted · givt",
+      "sources": [{ "path": "src/main/java/ads/event/EventCollector.java", "line": 104, "end_line": 123, "label": "stats()" }] },
+    { "id": "serving", "type": "backend", "label": "ServingService", "sublabel": "피로도 상한 필터", "stage": 4, "row": 0, "tag": "1단계",
+      "sources": [{ "path": "src/main/java/ads/serving/CandidateFilter.java", "line": 50, "end_line": 51, "label": "FREQUENCY_CAP" }] },
+    { "id": "stats", "type": "backend", "label": "GET /events/stats", "sublabel": "브라우저 vs 서버 비교", "stage": 4, "row": 2, "tag": "대사",
+      "sources": [{ "path": "src/main/java/ads/event/EventController.java", "line": 100, "end_line": 103, "label": "stats" }] }
+  ],
+  "flows": [
+    { "id": "browser-events", "from": "page", "to": "controller", "label": "이벤트 + 토큰", "classification": "sendBeacon · 클릭 URL", "variant": "emphasis" },
+    { "id": "bot-events", "from": "bot", "to": "controller", "label": "봇 UA 이벤트", "classification": "204, 봇은 모름", "variant": "default" },
+    { "id": "landing", "from": "controller", "to": "product", "label": "302 + adToken", "classification": "파라미터 체이닝", "variant": "default" },
+    { "id": "verified", "from": "controller", "to": "collector", "label": "검증된 이벤트", "classification": "서명 OK", "variant": "emphasis" },
+    { "id": "dedupe-freq", "from": "collector", "to": "keys", "label": "중복 · 피로도", "classification": "렌더링만 +1", "variant": "default" },
+    { "id": "append", "from": "collector", "to": "streams", "label": "XADD", "classification": "노출 1번, 클릭 그대로", "variant": "emphasis" },
+    { "id": "count", "from": "collector", "to": "counters", "label": "건수 INCR", "classification": "GIVT는 여기만", "variant": "default" },
+    { "id": "freq-read", "from": "keys", "to": "serving", "label": "노출 수", "classification": "MGET", "variant": "default" },
+    { "id": "count-read", "from": "counters", "to": "stats", "label": "종류별 건수", "classification": "도착 수", "variant": "default" }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "노출은 입구에서 한 번만",
+      "items": [
+        "같은 토큰 × 같은 종류는 SET NX로 한 번만 받음(최소 한 번 전달 + 중복 제거)",
+        "렌더링 노출만 피로도 수를 올림: 화면에 안 그린 광고는 본 적이 없으므로",
+        "중복 확인, 피로도, 적재를 Lua 하나로 묶어 반쪽 상태가 없음"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "클릭은 판정을 미룸",
+      "items": [
+        "클릭은 같은 clickId가 두 번 와도 스트림에 둘 다 넣음",
+        "어느 클릭을 과금할지는 4단계 과금 컨슈머가 장부 트랜잭션에서 판정",
+        "스트림을 읽는 과금 컨슈머는 아직 없음(4단계)"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "브라우저에서 사라지는 이벤트",
+      "items": [
+        "fetch 후 바로 이동하면 클릭이 서버에 도착하지 않음(실측 3번 중 0건)",
+        "sendBeacon과 클릭 URL은 페이지가 바뀌어도 도착",
+        "토큰이 상품 페이지 URL로 이어지지 않으면 3단계에서 구매를 광고에 연결할 수 없음"
+      ]
+    }
+  ]
+}
