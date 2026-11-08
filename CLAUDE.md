@@ -245,6 +245,40 @@ PAM의 서버 구성은 그대로 따르지만, 코드 구조는 PAM(Kotlin 멀�
 - `README.md`: 전체 흐름도(서빙 경로와 측정 경로), 실행 방법, 시나리오 실행 방법
 - `docs/keywords.md`: 용어 한 줄 정의(CPC, CTR, eCPM, 2등가 옥션, 노출 토큰, 멱등성, 이벤트 시간과 처리 시간, 최소 한 번 전달, 파티션 키, 핫 파티션, 초과 집행, 대사, 원장부터 시작)
 - `docs/tradeoffs.md`: 결정 기록
+- `docs/diagrams/`: 도식(다이어그램). 아래 "도식" 규칙대로 Archify로 만듭니다
+
+### 도식 (Archify로 만든다)
+
+설명용 도식은 [Archify](https://github.com/tt-a1i/archify)(Apache-2.0) 에이전트 스킬로 만듭니다. 결과는 확대, 경로 강조, 테마 전환이 되는 HTML 한 장입니다.
+README의 짧은 글자 흐름도는 그대로 두고, 개념을 설명하는 도식은 Archify로 만들어 README에서 링크합니다.
+
+**설치하지 않습니다.** 저장소에 스킬 파일을 넣거나 전역 설치하지 않고, 세션마다 고정 버전을 임시 폴더에 받아 씁니다(`docs/tradeoffs.md` 13).
+
+```bash
+# 세션의 임시(스크래치) 폴더에 받는다. 저장소 안에 받지 않는다
+git clone --depth 1 --branch v3.2.0 https://github.com/tt-a1i/archify <임시 폴더>/archify
+export ARCHIFY_UPDATE_CHECK_DISABLED=1   # 업데이트 확인용 외부 요청 끄기
+node <임시 폴더>/archify/archify/bin/archify.mjs doctor
+```
+
+- 버전은 `v3.2.0`으로 고정합니다. 올릴 때는 이 문서와 `docs/tradeoffs.md` 13을 함께 고칩니다.
+- 그리기 전에 `<임시 폴더>/archify/archify/SKILL.md`를 읽고 그 절차(Type router → authoring defaults, 예제, 스키마 읽기 → 후보 JSON 작성 → `finalize`)를 그대로 따릅니다. `bin/archify.mjs`는 위 경로로 바꿔 씁니다.
+- 외부 코드를 실행하는 일이라 작업 환경의 권한 확인이 뜰 수 있습니다. 거절되면 우회하지 말고 사용자에게 알립니다.
+- 저장 위치
+  - 원본(후보 JSON): `docs/diagrams/src/<이름>.<종류>.json`. 도식을 고칠 때는 HTML이 아니라 이것을 고치고 `finalize`를 다시 돌립니다
+  - 결과 HTML: `docs/diagrams/<이름>.html`
+  - `finalize`가 남기는 영수증, 브라우저 검사 결과(`*.finalize-summary.json`, `.archify/` 등)는 커밋하지 않습니다(`.gitignore`)
+- 도식은 코드와 맞아야 합니다. 노드, 메시지 이름은 실제 클래스, API, Redis 키 이름을 씁니다. 코드를 바꿔 흐름이 달라지면 같은 PR에서 해당 도식도 고칩니다.
+- 단계별로 그릴 도식과 종류
+
+  | 도식 | Archify 종류 | 단계 |
+  |---|---|---|
+  | `GET /ads` 한 번: 후보 → 예측 → 랭킹, 옥션 → 블렌딩 → 토큰, 50ms 타임아웃 분기 | `sequence` | 1 |
+  | 데모 페이지 → 수집 API → Lua → 파티션 스트림 → 소비자 | `dataflow` | 2 (4단계에서 소비자 추가) |
+  | 클릭 → 노출 토큰 → 구매 연결(어트리뷰션) | `sequence` | 3 |
+  | 클릭 한 건의 과금 판정: 재전송 → 10초 → 예산 → 과금/무과금 | `lifecycle` | 4 |
+  | 전체 구성: Cloudflare → Nginx → 앱, Neon, Upstash, 패키지 경계 | `architecture` | 0, 수시로 갱신 |
+  | 테이블과 키(장부 click_id 유니크 등) | `erd` | 4 |
 
 ### 장애 시나리오 테스트
 사용자가 직접 돌려 보며 이해하는 용도입니다. 테스트 이름은 한국어로 쓰고, 각 테스트 위에 "무엇을 재현하고 무엇을 증명하는지"를 주석으로 씁니다.
