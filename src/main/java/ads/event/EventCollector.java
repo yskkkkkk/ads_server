@@ -21,6 +21,8 @@ import ads.common.Partitions;
  * - 노출(RENDERED, VIEWABLE)은 "같은 토큰 × 같은 종류"를 한 번만 받습니다. 브라우저가 재전송해도 한 번만 셉니다.
  * - 렌더링 노출을 받을 때만 피로도 횟수(ads:freq:{사용자}:{광고})를 올립니다. 1단계 서빙이 이 숫자로 거릅니다.
  * - 클릭은 여기서 중복 제거하지 않습니다. clickId 기준 중복 제거와 과금 판정은 4단계 과금 컨슈머의 일입니다.
+ * - 클릭은 사용자별 클릭 기록(ads:clicks:{사용자}, 8일 유지)에도 남깁니다. 3단계 어트리뷰션이 읽습니다.
+ *   처음 보는 clickId일 때만 광고별 추정 광고비(ads:est-spend:{광고})에 낙찰 CPC를 더합니다(과금 규칙 적용 전 값).
  * - 스트림은 광고 ID로 나눈 파티션(ads:events:0~3)입니다(Partitions).
  * - 위 일들(중복 확인, 피로도, 스트림 적재, 건수)은 Lua 스크립트 하나로 원자적으로 처리합니다(scripts/collect_event.lua).
  *
@@ -43,6 +45,8 @@ public class EventCollector {
     private static final long DEDUPE_TTL_SECONDS = 24 * 60 * 60;
     private static final long FREQUENCY_WINDOW_SECONDS = 60 * 60;
     private static final long STREAM_MAX_LEN = 10_000;
+    /** 어트리뷰션 윈도우(7일)보다 하루 길게 둡니다. 윈도우 경계의 구매도 클릭 기록을 찾을 수 있게. */
+    private static final long CLICK_HISTORY_TTL_SECONDS = 8 * 24 * 60 * 60;
 
     private final StringRedisTemplate redis;
     private final DefaultRedisScript<Long> script;
@@ -66,12 +70,16 @@ public class EventCollector {
         boolean dedupe = type != EventType.CLICK;
         boolean countFrequency = type == EventType.RENDERED;
 
+        boolean recordClick = type == EventType.CLICK;
+
         List<String> keys = List.of(
                 "ads:dedupe:" + eventId,
                 "ads:freq:" + token.userId() + ":" + token.adId(),
                 Partitions.streamKeyOfAd(token.adId()),
                 counterKey(type, "accepted"),
-                counterKey(type, "duplicate"));
+                counterKey(type, "duplicate"),
+                clickHistoryKey(token.userId()),
+                estimatedSpendKey(token.adId()));
 
         Map<String, String> fields = new LinkedHashMap<>();
         fields.put("type", type.name());
@@ -87,6 +95,10 @@ public class EventCollector {
         args.add(Long.toString(dedupe ? DEDUPE_TTL_SECONDS : 0));
         args.add(Long.toString(countFrequency ? FREQUENCY_WINDOW_SECONDS : 0));
         args.add(Long.toString(STREAM_MAX_LEN));
+        args.add(Long.toString(recordClick ? CLICK_HISTORY_TTL_SECONDS : 0));
+        args.add(Long.toString(eventTime));
+        args.add(token.impressionId() + "|" + token.adId() + "|" + eventId);
+        args.add(Integer.toString(token.cpc()));
         fields.forEach((k, v) -> {
             args.add(k);
             args.add(v);
@@ -120,6 +132,14 @@ public class EventCollector {
         result.put("events", counts);
         result.put("streams", streams);
         return result;
+    }
+
+    public static String clickHistoryKey(String userId) {
+        return "ads:clicks:" + userId;
+    }
+
+    public static String estimatedSpendKey(long adId) {
+        return "ads:est-spend:" + adId;
     }
 
     static String counterKey(EventType type, String result) {
