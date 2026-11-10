@@ -1,0 +1,313 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "구매는 어느 광고 덕분인가: 클릭에서 귀속까지",
+    "locale": "ko",
+    "output": "docs/diagrams/attribution.html",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/yskkkkkk/ads_server",
+      "provider": "github",
+      "revision": "e5abd32a642598a44605972e1956db78d49ccbb7"
+    }
+  },
+  "participants": [
+    {
+      "id": "page",
+      "type": "frontend",
+      "label": "데모 페이지",
+      "sublabel": "광고 클릭",
+      "sources": [
+        {
+          "path": "src/main/resources/static/demo/demo.js",
+          "line": 84,
+          "end_line": 100,
+          "label": "clickAd()"
+        }
+      ]
+    },
+    {
+      "id": "events",
+      "type": "backend",
+      "label": "EventController",
+      "sublabel": "클릭 URL",
+      "sources": [
+        {
+          "path": "src/main/java/ads/event/EventController.java",
+          "line": 81,
+          "end_line": 98,
+          "label": "GET /events/click"
+        },
+        {
+          "path": "src/main/java/ads/event/EventCollector.java",
+          "line": 64,
+          "end_line": 109,
+          "label": "collect()"
+        }
+      ]
+    },
+    {
+      "id": "redis",
+      "type": "database",
+      "label": "Redis",
+      "sublabel": "ads:clicks:{사용자}",
+      "sources": [
+        {
+          "path": "src/main/resources/scripts/collect_event.lua",
+          "line": 29,
+          "end_line": 36,
+          "label": "클릭 기록 ZADD"
+        }
+      ]
+    },
+    {
+      "id": "product",
+      "type": "frontend",
+      "label": "상품 페이지",
+      "sublabel": "?adToken=…",
+      "sources": [
+        {
+          "path": "src/main/resources/static/demo/product.html",
+          "line": 81,
+          "end_line": 91,
+          "label": "구매하기"
+        }
+      ]
+    },
+    {
+      "id": "conv",
+      "type": "backend",
+      "label": "ConversionService",
+      "sublabel": "구매자 찾기",
+      "sources": [
+        {
+          "path": "src/main/java/ads/conversion/ConversionController.java",
+          "line": 43,
+          "end_line": 66,
+          "label": "POST /events/conversion"
+        },
+        {
+          "path": "src/main/java/ads/conversion/ConversionService.java",
+          "line": 56,
+          "end_line": 97,
+          "label": "record()"
+        },
+        {
+          "path": "src/main/java/ads/conversion/ConversionService.java",
+          "line": 100,
+          "end_line": 116,
+          "label": "clickHistory()"
+        }
+      ]
+    },
+    {
+      "id": "rule",
+      "type": "backend",
+      "label": "Attribution",
+      "sublabel": "순수 규칙",
+      "sources": [
+        {
+          "path": "src/main/java/ads/conversion/Attribution.java",
+          "line": 52,
+          "end_line": 71,
+          "label": "attribute()"
+        }
+      ]
+    },
+    {
+      "id": "db",
+      "type": "database",
+      "label": "Postgres",
+      "sublabel": "conversions",
+      "sources": [
+        {
+          "path": "src/main/resources/db/migration/V3__conversions.sql",
+          "line": 1,
+          "end_line": 13,
+          "label": "order_id 기본 키"
+        }
+      ]
+    }
+  ],
+  "segments": [
+    {
+      "from": 150,
+      "to": 300,
+      "label": "⑧ 클릭과 파라미터 체이닝"
+    },
+    {
+      "from": 306,
+      "to": 540,
+      "label": "⑨ 구매자와 마지막 클릭 찾기"
+    },
+    {
+      "from": 548,
+      "to": 656,
+      "label": "한 번만 기록"
+    }
+  ],
+  "messages": [
+    {
+      "id": "click",
+      "from": "page",
+      "to": "events",
+      "y": 160,
+      "label": "GET /events/click",
+      "variant": "emphasis"
+    },
+    {
+      "id": "zadd",
+      "from": "events",
+      "to": "redis",
+      "y": 188,
+      "label": "클릭 기록 ZADD",
+      "variant": "default",
+      "note": "새 clickId면 추정 광고비 += 낙찰 CPC"
+    },
+    {
+      "id": "redirect",
+      "from": "events",
+      "to": "product",
+      "y": 248,
+      "label": "302 + adToken",
+      "variant": "emphasis",
+      "note": "토큰이 빠지면 TOKEN 경로가 끊김"
+    },
+    {
+      "id": "buy",
+      "from": "product",
+      "to": "conv",
+      "y": 316,
+      "label": "POST /events/conversion",
+      "variant": "emphasis",
+      "note": "주문, 상품, 금액 + token? + userId?"
+    },
+    {
+      "id": "history",
+      "from": "conv",
+      "to": "redis",
+      "y": 376,
+      "label": "구매자 클릭 기록",
+      "variant": "default",
+      "note": "토큰 안 사용자, 로그인 사용자"
+    },
+    {
+      "id": "history-reply",
+      "from": "redis",
+      "to": "conv",
+      "y": 434,
+      "label": "클릭 목록",
+      "variant": "return"
+    },
+    {
+      "id": "attribute",
+      "from": "conv",
+      "to": "rule",
+      "y": 462,
+      "label": "attribute()",
+      "variant": "emphasis",
+      "note": "같은 상품 · 구매 전 · 7일 안 마지막 클릭"
+    },
+    {
+      "id": "attribute-reply",
+      "from": "rule",
+      "to": "conv",
+      "y": 530,
+      "label": "TOKEN / USER_HISTORY / NONE",
+      "variant": "return"
+    },
+    {
+      "id": "insert",
+      "from": "conv",
+      "to": "db",
+      "y": 560,
+      "label": "INSERT ON CONFLICT",
+      "variant": "default",
+      "note": "같은 주문 ID는 무시(멱등)"
+    },
+    {
+      "id": "insert-reply",
+      "from": "db",
+      "to": "conv",
+      "y": 618,
+      "label": "새 주문 / 이미 있음",
+      "variant": "return"
+    },
+    {
+      "id": "result",
+      "from": "conv",
+      "to": "product",
+      "y": 646,
+      "label": "귀속 결과",
+      "variant": "return"
+    }
+  ],
+  "activations": [
+    {
+      "participant": "events",
+      "from": 160,
+      "to": 254,
+      "type": "backend"
+    },
+    {
+      "participant": "redis",
+      "from": 188,
+      "to": 240,
+      "type": "database"
+    },
+    {
+      "participant": "conv",
+      "from": 316,
+      "to": 652,
+      "type": "backend"
+    },
+    {
+      "participant": "redis",
+      "from": 376,
+      "to": 440,
+      "type": "database"
+    },
+    {
+      "participant": "rule",
+      "from": 462,
+      "to": 536,
+      "type": "backend"
+    },
+    {
+      "participant": "db",
+      "from": 560,
+      "to": 624,
+      "type": "database"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "규칙 하나: 마지막 클릭, 7일",
+      "items": [
+        "같은 상품 광고의 클릭 중 구매 직전 마지막 것에 매출을 모두 줌",
+        "정확히 7일까지 인정, 넘으면 OUTSIDE_WINDOW",
+        "구매 뒤의 클릭, 다른 상품 구매는 귀속하지 않음"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "클로즈드 루프",
+      "items": [
+        "토큰이 있으면 토큰 안의 사용자로 클릭 기록을 찾음(TOKEN)",
+        "토큰이 끊겨도 로그인 구매자면 자기 클릭 기록으로 다시 이음(USER_HISTORY)",
+        "둘 다 없으면 NONE: 매출은 남지만 광고 성과에서 빠짐"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "추정 ROAS",
+      "items": [
+        "귀속 매출 ÷ 추정 광고비(클릭마다 낙찰 CPC, 재전송 제외)",
+        "실측: 체이닝 한 번 끊김으로 217배 → 약 145배",
+        "10초 규칙, 예산을 적용한 실제 광고비는 4단계 장부"
+      ]
+    }
+  ]
+}
