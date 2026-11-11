@@ -9,7 +9,7 @@
     "repository": {
       "url": "https://github.com/yskkkkkk/ads_server",
       "provider": "github",
-      "revision": "e5abd32a642598a44605972e1956db78d49ccbb7"
+      "revision": "1113930cb7b62674aebf665e075757e6156ce7bf"
     }
   },
   "stages": [
@@ -255,6 +255,23 @@
           "label": "clickHistory()"
         }
       ]
+    },
+    {
+      "id": "billing",
+      "type": "backend",
+      "label": "BillingConsumer",
+      "sublabel": "파티션당 하나",
+      "stage": 4,
+      "row": 1,
+      "tag": "4단계",
+      "sources": [
+        {
+          "path": "src/main/java/ads/billing/BillingConsumer.java",
+          "line": 94,
+          "end_line": 116,
+          "label": "pollOnce()"
+        }
+      ]
     }
   ],
   "flows": [
@@ -345,6 +362,14 @@
       "label": "사용자 클릭",
       "classification": "7일 안 마지막",
       "variant": "default"
+    },
+    {
+      "id": "billing-read",
+      "from": "streams",
+      "to": "billing",
+      "label": "CLICK 항목",
+      "classification": "그룹 billing · XACK",
+      "variant": "emphasis"
     }
   ],
   "cards": [
@@ -362,8 +387,8 @@
       "title": "클릭은 판정을 미룸",
       "items": [
         "클릭은 같은 clickId가 두 번 와도 스트림에 둘 다 넣음",
-        "어느 클릭을 과금할지는 4단계 과금 컨슈머가 장부 트랜잭션에서 판정",
-        "클릭은 사용자별 클릭 기록에도 남아 3단계 어트리뷰션이 읽음. 스트림을 읽는 과금 컨슈머는 4단계"
+        "과금 컨슈머(4단계)가 파티션마다 하나씩 읽어 장부 트랜잭션에서 판정",
+        "클릭은 사용자별 클릭 기록에도 남아 3단계 어트리뷰션이 읽음"
       ]
     },
     {

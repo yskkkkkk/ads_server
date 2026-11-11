@@ -1,0 +1,250 @@
+{
+  "schema_version": 3,
+  "diagram_type": "lifecycle",
+  "meta": {
+    "title": "클릭 한 건의 과금 판정",
+    "locale": "ko",
+    "output": "docs/diagrams/billing.html",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/yskkkkkk/ads_server",
+      "provider": "github",
+      "revision": "1113930cb7b62674aebf665e075757e6156ce7bf"
+    }
+  },
+  "mainPath": [
+    "received",
+    "ledger_check",
+    "fraud_check",
+    "budget_check",
+    "charged",
+    "acked"
+  ],
+  "states": [
+    {
+      "id": "received",
+      "type": "start",
+      "label": "항목 도착",
+      "sublabel": "PEL 먼저",
+      "tag": "XREADGROUP",
+      "step": "01",
+      "sources": [
+        {
+          "path": "src/main/java/ads/billing/BillingConsumer.java",
+          "line": 94,
+          "end_line": 116,
+          "label": "pollOnce()"
+        }
+      ]
+    },
+    {
+      "id": "ledger_check",
+      "type": "decision",
+      "label": "장부에 있나?",
+      "sublabel": "clickId 조회",
+      "tag": "① 재전송",
+      "step": "02",
+      "sources": [
+        {
+          "path": "src/main/java/ads/billing/BillingConsumer.java",
+          "line": 126,
+          "end_line": 177,
+          "label": "handle()"
+        }
+      ]
+    },
+    {
+      "id": "fraud_check",
+      "type": "decision",
+      "label": "10초 미만?",
+      "sublabel": "이벤트 시간",
+      "tag": "② 부정 클릭",
+      "step": "03",
+      "sources": [
+        {
+          "path": "src/main/java/ads/billing/ClickBilling.java",
+          "line": 74,
+          "end_line": 86,
+          "label": "decide()"
+        }
+      ]
+    },
+    {
+      "id": "budget_check",
+      "type": "decision",
+      "label": "잔액 < cpc?",
+      "sublabel": "메모리 잔액",
+      "tag": "③ 예산",
+      "step": "04",
+      "sources": [
+        {
+          "path": "src/main/java/ads/billing/ClickBilling.java",
+          "line": 74,
+          "end_line": 86,
+          "label": "decide()"
+        }
+      ]
+    },
+    {
+      "id": "charged",
+      "type": "success",
+      "label": "CHARGED",
+      "sublabel": "장부 + spent, 한 TX",
+      "tag": "한 트랜잭션",
+      "step": "05",
+      "sources": [
+        {
+          "path": "src/main/java/ads/billing/BillingConsumer.java",
+          "line": 126,
+          "end_line": 177,
+          "label": "tx.execute"
+        },
+        {
+          "path": "src/main/java/ads/billing/ClickBilling.java",
+          "line": 89,
+          "end_line": 98,
+          "label": "apply()"
+        }
+      ]
+    },
+    {
+      "id": "acked",
+      "type": "neutral",
+      "label": "XACK",
+      "sublabel": "커밋 뒤에만",
+      "tag": "처리 완료",
+      "step": "06",
+      "sources": [
+        {
+          "path": "src/main/java/ads/billing/BillingConsumer.java",
+          "line": 94,
+          "end_line": 116,
+          "label": "acknowledge"
+        }
+      ]
+    },
+    {
+      "id": "redelivered",
+      "type": "neutral",
+      "label": "재배달",
+      "sublabel": "같은 스트림 항목, ACK만",
+      "tag": "기록 없음"
+    },
+    {
+      "id": "duplicate",
+      "type": "neutral",
+      "label": "DUPLICATE",
+      "sublabel": "duplicate_clicks에 기록",
+      "tag": "재전송"
+    },
+    {
+      "id": "invalid",
+      "type": "failure",
+      "label": "INVALID_CLICK",
+      "sublabel": "장부 amount 0",
+      "tag": "무과금"
+    },
+    {
+      "id": "exhausted",
+      "type": "failure",
+      "label": "BUDGET_EXHAUSTED",
+      "sublabel": "amount 0 + 소진 표시",
+      "tag": "무과금"
+    }
+  ],
+  "transitions": [
+    {
+      "id": "t-received",
+      "from": "received",
+      "to": "ledger_check",
+      "label": "클릭"
+    },
+    {
+      "id": "t-new",
+      "from": "ledger_check",
+      "to": "fraud_check",
+      "label": "없음"
+    },
+    {
+      "id": "t-ok-time",
+      "from": "fraud_check",
+      "to": "budget_check",
+      "label": "아니오"
+    },
+    {
+      "id": "t-enough",
+      "from": "budget_check",
+      "to": "charged",
+      "label": "충분",
+      "variant": "emphasis"
+    },
+    {
+      "id": "t-ack",
+      "from": "charged",
+      "to": "acked",
+      "label": "커밋"
+    },
+    {
+      "id": "t-redelivered",
+      "from": "ledger_check",
+      "to": "redelivered",
+      "label": "같은 항목"
+    },
+    {
+      "id": "t-duplicate",
+      "from": "ledger_check",
+      "to": "duplicate",
+      "label": "다른 항목"
+    },
+    {
+      "id": "t-invalid",
+      "from": "fraud_check",
+      "to": "invalid",
+      "label": "10초 미만"
+    },
+    {
+      "id": "t-exhausted",
+      "from": "budget_check",
+      "to": "exhausted",
+      "label": "부족"
+    },
+    {
+      "id": "t-crash",
+      "from": "charged",
+      "to": "received",
+      "label": "ACK 전에 죽음",
+      "note": "재시작하면 같은 항목이 다시 오고 '같은 항목'으로 판정",
+      "variant": "dashed"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "검사 순서가 곧 규칙",
+      "items": [
+        "① 재전송 → ② 10초 미만 → ③ 잔액 부족 → 과금",
+        "경계값: 정확히 10초면 과금, 잔액 = cpc면 과금",
+        "마지막 과금 시각은 과금했을 때만 갱신"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "커밋 후 ACK",
+      "items": [
+        "아래쪽 결과(재배달, DUPLICATE, INVALID_CLICK, BUDGET_EXHAUSTED)도 모두 장부 커밋 뒤에 XACK",
+        "장부 INSERT와 예산 UPDATE는 한 트랜잭션",
+        "ACK 전에 죽으면 같은 항목이 다시 오지만 장부의 entry_id로 알아보고 ACK만",
+        "커밋 전에 죽으면 아무것도 남지 않아 처음부터 다시 처리"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "무과금도 남긴다",
+      "items": [
+        "DUPLICATE, INVALID_CLICK, BUDGET_EXHAUSTED를 사유와 함께 기록",
+        "광고주가 '왜 클릭 100번에 80번만 과금됐나'를 물을 때의 근거",
+        "5단계 대사: 클릭 수 = 과금 + 무과금 사유별 합"
+      ]
+    }
+  ]
+}
