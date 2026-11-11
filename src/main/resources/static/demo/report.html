@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>대사와 성과 리포트 (데모)</title>
+<link rel="stylesheet" href="demo.css">
+<style>
+  main { max-width: 980px; }
+  .wrap { overflow-x: auto; }
+  td.ok { color: var(--ok); font-weight: 600; }
+  td.lag { color: var(--ad); font-weight: 600; }
+  td.bad { color: var(--bad); font-weight: 600; }
+</style>
+</head>
+<body>
+<main>
+  <p><a href="/demo/index.html">← 데모 쇼핑몰</a></p>
+  <h1>대사와 성과 리포트</h1>
+  <p class="note">수집(원본 이벤트), 장부(과금 컨슈머), 예산(쓴 돈)은 서로 다른 곳에서 만들어집니다. 대사는 이 셋이 맞는지 보고,
+    성과는 광고주가 보는 숫자를 보여줍니다. 광고를 누르고 몇 초 뒤 <button id="refresh">새로 읽기</button></p>
+
+  <fieldset>
+    <legend>대사 <span id="overall"></span></legend>
+    <div class="wrap"><table>
+      <thead><tr><th>광고</th><th>판정</th><th>수집 클릭</th><th>장부</th><th>재전송</th><th>처리 대기</th>
+        <th>과금</th><th>10초 규칙</th><th>예산 부족</th><th>장부 합계</th><th>쓴 돈</th><th>미청구</th></tr></thead>
+      <tbody id="recon"></tbody>
+    </table></div>
+    <p class="note">판정: OK = 모두 맞음 / LAGGING = 수집 클릭 ≠ 장부 + 재전송(한쪽 컨슈머가 아직 처리 중) / MISMATCH = 장부 합계 ≠ 쓴 돈(반쪽 상태, 있으면 안 됨).
+      수집 단계에서 걸러진 봇 클릭(GIVT): <b id="givt"></b>건</p>
+  </fieldset>
+
+  <fieldset>
+    <legend>광고별 성과</legend>
+    <div class="wrap"><table>
+      <thead><tr><th>광고</th><th>렌더링</th><th>viewable</th><th>클릭</th><th>CTR(렌더링)</th><th>CTR(viewable)</th>
+        <th>과금 클릭</th><th>광고비</th><th>전환</th><th>매출</th><th>ROAS</th><th>추정 광고비</th><th>추정 ROAS</th></tr></thead>
+      <tbody id="perf"></tbody>
+    </table></div>
+    <p class="note">CTR은 같은 클릭 수를 어떤 노출로 나누느냐에 따라 달라집니다. ROAS는 장부의 실제 광고비 기준, 추정 ROAS는 3단계의 과금 규칙 적용 전 광고비 기준이며,
+      두 광고비의 차이가 과금하지 않은 클릭(부정 클릭, 예산 소진)입니다.</p>
+  </fieldset>
+</main>
+<script>
+/*
+ * 5단계 리포트 화면. /reports/reconciliation, /reports/performance 를 그대로 표로 그립니다.
+ * 활동이 없는 광고(수집 클릭, 노출, 장부가 모두 0)는 숨깁니다.
+ */
+(() => {
+  const pct = (v) => (v == null ? '-' : (v * 100).toFixed(1) + '%');
+  const times = (v) => (v == null ? '-' : v.toFixed(1) + '배');
+  const won = (v) => Number(v).toLocaleString() + '원';
+  const row = (cells, statusClass) => {
+    const tr = document.createElement('tr');
+    cells.forEach((c, i) => {
+      const td = document.createElement('td');
+      td.textContent = c;
+      if (i === 1 && statusClass) td.className = statusClass;
+      tr.append(td);
+    });
+    return tr;
+  };
+  async function load() {
+    const recon = await (await fetch('/reports/reconciliation')).json();
+    const perf = await (await fetch('/reports/performance')).json();
+    document.getElementById('overall').textContent = '· 전체 ' + recon.status;
+    document.getElementById('givt').textContent = recon.givtClicksFilteredAtCollection;
+    const rt = document.getElementById('recon');
+    rt.replaceChildren();
+    for (const a of recon.ads.filter((a) => a.click_events || a.ledger_rows || a.spent)) {
+      const cls = { OK: 'ok', LAGGING: 'lag', MISMATCH: 'bad' }[a.status];
+      rt.append(row(['#' + a.ad_id, a.status, a.click_events, a.ledger_rows, a.duplicate, a.pending, a.charged,
+        a.invalid_click, a.budget_exhausted, won(a.ledger_charged), won(a.spent), won(a.unbilled)], cls));
+    }
+    const pt = document.getElementById('perf');
+    pt.replaceChildren();
+    for (const a of perf.filter((a) => a.rendered || a.clicks || a.revenue)) {
+      pt.append(row(['#' + a.ad_id + ' ' + a.brand, a.rendered, a.viewable, a.clicks, pct(a.ctrRendered), pct(a.ctrViewable),
+        a.billed_clicks, won(a.spend), a.conversions, won(a.revenue), times(a.roas), won(a.estimatedSpend), times(a.estimatedRoas)]));
+    }
+  }
+  document.getElementById('refresh').onclick = load;
+  load();
+})();
+</script>
+</body>
+</html>

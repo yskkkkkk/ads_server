@@ -4,3 +4,5 @@
 ads:
   billing:
     enabled: false
+  event-log:
+    enabled: false
