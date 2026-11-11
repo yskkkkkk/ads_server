@@ -40,3 +40,7 @@ ads:
     enabled: ${BILLING_ENABLED:true}   # 과금 컨슈머를 띄울지. 테스트는 끄고 컨슈머를 직접 돌린다
     poll-ms: ${BILLING_POLL_MS:1000}   # 스트림을 읽고 쉬는 간격. 원격 Redis 명령 수 = 파티션 4 × (1초 / 이 값)
     batch-size: 50                     # 한 번에 읽는 항목 수
+  event-log:
+    enabled: ${EVENT_LOG_ENABLED:true}   # 집계 컨슈머(그룹 stats)를 돌릴지
+    poll-ms: ${EVENT_LOG_POLL_MS:1000}   # 원격 Redis 명령 수 = 파티션 4 × (1초 / 이 값)
+    batch-size: 100

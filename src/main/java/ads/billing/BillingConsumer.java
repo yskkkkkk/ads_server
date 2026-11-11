@@ -6,17 +6,13 @@ import java.util.Map;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.data.redis.RedisSystemException;
-import org.springframework.data.redis.connection.stream.Consumer;
 import org.springframework.data.redis.connection.stream.MapRecord;
-import org.springframework.data.redis.connection.stream.ReadOffset;
-import org.springframework.data.redis.connection.stream.StreamOffset;
-import org.springframework.data.redis.connection.stream.StreamReadOptions;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import ads.common.Partitions;
+import ads.common.StreamGroupReader;
 
 /**
  * 과금 컨슈머 하나. 파티션 스트림 하나(ads:events:{파티션})를 읽어 클릭마다 과금 여부를 확정합니다.
@@ -55,72 +51,41 @@ public class BillingConsumer {
 
     private final int partition;
     private final String consumerName;
-    private final int batchSize;
     private final int reserveCpc;
     private final StringRedisTemplate redis;
     private final JdbcTemplate jdbc;
     private final TransactionTemplate tx;
 
     private final ClickBilling.State state = new ClickBilling.State();
-    private boolean recovering = true;
+    private final StreamGroupReader reader;
 
     public BillingConsumer(int partition, String consumerName, int batchSize, int reserveCpc,
                            StringRedisTemplate redis, JdbcTemplate jdbc, TransactionTemplate tx) {
         this.partition = partition;
         this.consumerName = consumerName;
-        this.batchSize = batchSize;
         this.reserveCpc = reserveCpc;
         this.redis = redis;
         this.jdbc = jdbc;
         this.tx = tx;
+        this.reader = new StreamGroupReader(redis, Partitions.streamKey(partition), GROUP, consumerName, batchSize);
     }
 
     /** 시작(또는 재시작): 컨슈머 그룹을 만들고, 메모리 상태를 장부에서 다시 만들고, 밀린 항목(PEL)부터 읽게 합니다. */
     public void start() {
-        String stream = Partitions.streamKey(partition);
-        try {
-            redis.opsForStream().createGroup(stream, ReadOffset.from("0"), GROUP);
-        } catch (RedisSystemException e) {
-            if (!isBusyGroup(e)) {
-                throw e;
-            }
-            // 이미 그룹이 있다(재시작, 다른 컨슈머가 먼저 만듦). 그대로 쓴다
-        }
+        reader.start();
         restoreFromLedger();
-        recovering = true;
     }
 
     /** 한 번 읽고 처리합니다. 처리한 항목 수를 돌려줍니다. ack=false는 "커밋 직후 ACK 전에 죽음"을 흉내 냅니다. */
     public int pollOnce(boolean ack) {
-        String stream = Partitions.streamKey(partition);
-        List<MapRecord<String, Object, Object>> records = List.of();
-        if (recovering) {
-            records = read(stream, ReadOffset.from("0")); // ACK하지 못한 채 남은 내 항목(PEL)
-            if (records.isEmpty()) {
-                recovering = false; // 밀린 항목을 다 처리했으면 이제 새 항목을 읽는다
-            }
-        }
-        if (!recovering) {
-            records = read(stream, ReadOffset.lastConsumed());
-        }
-        if (records.isEmpty()) {
-            return 0;
-        }
+        List<MapRecord<String, Object, Object>> records = reader.next();
         for (MapRecord<String, Object, Object> record : records) {
             handle(record);
             if (ack) {
-                redis.opsForStream().acknowledge(stream, GROUP, record.getId());
+                reader.ack(record.getId()); // 커밋이 끝난 뒤에만
             }
         }
         return records.size();
-    }
-
-    private List<MapRecord<String, Object, Object>> read(String stream, ReadOffset offset) {
-        List<MapRecord<String, Object, Object>> records = redis.opsForStream().read(
-                Consumer.from(GROUP, consumerName),
-                StreamReadOptions.empty().count(batchSize),
-                StreamOffset.create(stream, offset));
-        return records == null ? List.of() : records;
     }
 
     private void handle(MapRecord<String, Object, Object> record) {
@@ -174,15 +139,6 @@ public class BillingConsumer {
         }
         log.info("[billing] p{} {} click={} ad={} user={} cpc={} -> {} (balance {})",
                 partition, consumerName, click.clickId(), click.adId(), click.userId(), click.cpc(), result, balance);
-    }
-
-    private static boolean isBusyGroup(Throwable e) {
-        for (Throwable t = e; t != null; t = t.getCause()) {
-            if (t.getMessage() != null && t.getMessage().contains("BUSYGROUP")) {
-                return true;
-            }
-        }
-        return false;
     }
 
     /** 메모리 상태를 장부에서 다시 만듭니다. 잔액 = 예산 − 장부의 과금 합계, 마지막 과금 시각 = 장부의 최대 이벤트 시각. */
