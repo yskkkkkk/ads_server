@@ -1,0 +1,345 @@
+{
+  "schema_version": 1,
+  "diagram_type": "erd",
+  "meta": {
+    "title": "테이블과 키",
+    "locale": "ko",
+    "output": "docs/diagrams/schema.html",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/yskkkkkk/ads_server",
+      "provider": "github",
+      "revision": "1113930cb7b62674aebf665e075757e6156ce7bf"
+    }
+  },
+  "layout": {
+    "mode": "grid"
+  },
+  "entities": [
+    {
+      "id": "conversions",
+      "label": "conversions",
+      "tag": "전환(3단계)",
+      "row": 0,
+      "col": 0,
+      "sources": [
+        {
+          "path": "src/main/resources/db/migration/V3__conversions.sql",
+          "line": 2,
+          "end_line": 13,
+          "label": "V3"
+        }
+      ],
+      "attributes": [
+        {
+          "name": "order_id",
+          "type": "TEXT｜같은 주문은 한 번만",
+          "key": "pk"
+        },
+        {
+          "name": "user_id",
+          "type": "TEXT｜로그인 사용자"
+        },
+        {
+          "name": "product_id",
+          "type": "BIGINT",
+          "key": "fk",
+          "references": "products.id"
+        },
+        {
+          "name": "amount",
+          "type": "INT｜ROAS의 분자"
+        },
+        {
+          "name": "ad_id",
+          "type": "BIGINT｜비면 광고와 무관한 매출",
+          "key": "fk",
+          "references": "ads.id"
+        },
+        {
+          "name": "click_id",
+          "type": "TEXT｜귀속 근거 클릭"
+        },
+        {
+          "name": "attributed_by",
+          "type": "TEXT｜TOKEN, USER_HISTORY, NONE"
+        },
+        {
+          "name": "reason",
+          "type": "TEXT"
+        },
+        {
+          "name": "ordered_at",
+          "type": "TIMESTAMPTZ"
+        },
+        {
+          "name": "clicked_at",
+          "type": "TIMESTAMPTZ"
+        }
+      ],
+      "width": 344
+    },
+    {
+      "id": "products",
+      "label": "products",
+      "tag": "카탈로그(1단계)",
+      "row": 0,
+      "col": 1,
+      "sources": [
+        {
+          "path": "src/main/resources/db/migration/V1__catalog.sql",
+          "line": 5,
+          "end_line": 12,
+          "label": "V1"
+        }
+      ],
+      "attributes": [
+        {
+          "name": "id",
+          "type": "BIGINT",
+          "key": "pk"
+        },
+        {
+          "name": "name",
+          "type": "TEXT"
+        },
+        {
+          "name": "brand",
+          "type": "TEXT｜개인화 신호"
+        },
+        {
+          "name": "category",
+          "type": "TEXT｜페이지 맥락"
+        },
+        {
+          "name": "price",
+          "type": "INT"
+        },
+        {
+          "name": "popularity",
+          "type": "INT｜일반 목록 순서"
+        }
+      ],
+      "width": 248
+    },
+    {
+      "id": "ads",
+      "label": "ads",
+      "tag": "카탈로그(1단계)",
+      "row": 1,
+      "col": 1,
+      "sources": [
+        {
+          "path": "src/main/resources/db/migration/V1__catalog.sql",
+          "line": 15,
+          "end_line": 23,
+          "label": "V1"
+        }
+      ],
+      "attributes": [
+        {
+          "name": "id",
+          "type": "BIGINT",
+          "key": "pk"
+        },
+        {
+          "name": "product_id",
+          "type": "BIGINT",
+          "key": "fk",
+          "references": "products.id"
+        },
+        {
+          "name": "bid",
+          "type": "INT｜CPC 입찰가"
+        },
+        {
+          "name": "base_pctr",
+          "type": "NUMERIC(6,4)｜예측 클릭률 기본값"
+        },
+        {
+          "name": "platform_weight",
+          "type": "NUMERIC(4,2)｜마진·프로모션 배수"
+        },
+        {
+          "name": "budget",
+          "type": "INT"
+        },
+        {
+          "name": "spent",
+          "type": "INT｜과금 컨슈머만 바꿈"
+        }
+      ],
+      "width": 363
+    },
+    {
+      "id": "duplicate_clicks",
+      "label": "duplicate_clicks",
+      "tag": "과금 장부(4단계)",
+      "row": 0,
+      "col": 2,
+      "sources": [
+        {
+          "path": "src/main/resources/db/migration/V4__click_ledger.sql",
+          "line": 18,
+          "end_line": 23,
+          "label": "V4"
+        }
+      ],
+      "attributes": [
+        {
+          "name": "entry_id",
+          "type": "TEXT｜재전송 스트림 항목",
+          "key": "pk"
+        },
+        {
+          "name": "click_id",
+          "type": "TEXT",
+          "key": "fk",
+          "references": "click_ledger.click_id"
+        },
+        {
+          "name": "ad_id",
+          "type": "BIGINT",
+          "key": "fk",
+          "references": "ads.id"
+        },
+        {
+          "name": "received_at",
+          "type": "TIMESTAMPTZ"
+        }
+      ],
+      "width": 266
+    },
+    {
+      "id": "click_ledger",
+      "label": "click_ledger",
+      "tag": "과금 장부(4단계)",
+      "row": 1,
+      "col": 2,
+      "sources": [
+        {
+          "path": "src/main/resources/db/migration/V4__click_ledger.sql",
+          "line": 4,
+          "end_line": 15,
+          "label": "V4"
+        }
+      ],
+      "attributes": [
+        {
+          "name": "click_id",
+          "type": "TEXT｜멱등성: 클릭당 한 줄",
+          "key": "pk"
+        },
+        {
+          "name": "entry_id",
+          "type": "TEXT｜재배달 구분"
+        },
+        {
+          "name": "ad_id",
+          "type": "BIGINT",
+          "key": "fk",
+          "references": "ads.id"
+        },
+        {
+          "name": "user_id",
+          "type": "TEXT"
+        },
+        {
+          "name": "cpc",
+          "type": "INT｜토큰의 낙찰 CPC"
+        },
+        {
+          "name": "amount",
+          "type": "INT｜무과금이면 0"
+        },
+        {
+          "name": "result",
+          "type": "TEXT｜CHARGED 또는 무과금 사유"
+        },
+        {
+          "name": "event_time",
+          "type": "TIMESTAMPTZ｜10초 규칙 기준"
+        },
+        {
+          "name": "settled_at",
+          "type": "TIMESTAMPTZ"
+        }
+      ],
+      "width": 299
+    }
+  ],
+  "relationships": [
+    {
+      "id": "ads-products",
+      "from": "ads",
+      "to": "products",
+      "label": "광고 상품",
+      "fromCardinality": "many",
+      "toCardinality": "one"
+    },
+    {
+      "id": "conversions-products",
+      "from": "conversions",
+      "to": "products",
+      "label": "산 상품",
+      "fromCardinality": "many",
+      "toCardinality": "one"
+    },
+    {
+      "id": "conversions-ads",
+      "from": "conversions",
+      "to": "ads",
+      "label": "귀속 광고",
+      "fromCardinality": "many",
+      "fromOptional": true,
+      "toCardinality": "one",
+      "toOptional": true,
+      "identifying": false,
+      "variant": "dashed"
+    },
+    {
+      "id": "ledger-ads",
+      "from": "click_ledger",
+      "to": "ads",
+      "label": "과금 대상",
+      "fromCardinality": "many",
+      "toCardinality": "one"
+    },
+    {
+      "id": "duplicates-ledger",
+      "from": "duplicate_clicks",
+      "to": "click_ledger",
+      "label": "원래 클릭",
+      "fromCardinality": "many",
+      "toCardinality": "one"
+    },
+    {
+      "id": "duplicates-ads",
+      "from": "duplicate_clicks",
+      "to": "ads",
+      "label": "광고",
+      "fromCardinality": "many",
+      "toCardinality": "one"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "기본 키가 멱등성",
+      "items": [
+        "click_ledger.click_id: 같은 클릭은 한 줄, 두 번째 INSERT는 '이미 처리됨'",
+        "conversions.order_id: 같은 주문은 한 번만 매출",
+        "duplicate_clicks.entry_id: 재전송 항목이 재배달돼도 한 줄"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "장부가 원천",
+      "items": [
+        "ads.spent는 장부 합계와 같아야 함(한 트랜잭션에서 함께 바뀜)",
+        "컨슈머 메모리 잔액 = budget − 장부 과금 합계",
+        "확정된 줄은 고치지 않고 새 마이그레이션, 새 줄로 정정"
+      ]
+    }
+  ]
+}

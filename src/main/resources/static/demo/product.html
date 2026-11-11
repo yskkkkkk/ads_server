@@ -26,10 +26,13 @@
   </fieldset>
 
   <fieldset>
-    <legend>구매</legend>
-    <button disabled>구매하기 (3단계에서 연결)</button>
-    <p class="note">3단계에서 이 버튼이 URL의 광고 토큰과 함께 구매를 보내, 광고별 매출과 ROAS를 계산합니다.
-      토큰이 없으면 구매는 남지만 어느 광고 덕분인지 알 수 없습니다.</p>
+    <legend>구매 (⑨ 전환)</legend>
+    <label><input type="checkbox" id="login" checked> 로그인 상태로 구매(사용자 ID를 함께 보냄)</label>
+    <button id="buy">구매하기</button>
+    <div id="buyResult"></div>
+    <p class="note">구매는 URL의 광고 토큰(있으면)과 로그인 사용자 ID(체크하면)를 함께 보냅니다. 서버는 둘 중 있는 단서로 클릭 기록을 찾아
+      "구매 전 7일 안의 마지막 클릭"에 귀속합니다. 토큰을 끄고 로그인도 끄면 어느 광고 덕분인지 알 수 없습니다.
+      광고별 매출과 추정 ROAS: <a href="/conversions/stats">/conversions/stats</a></p>
   </fieldset>
 </main>
 <script>
@@ -59,11 +62,34 @@
     attribution.querySelector('.token').textContent = '토큰 앞부분을 base64로 풀면: ' + payload;
   } else {
     attribution.innerHTML = '<p class="loss">광고 유입 정보가 없습니다.</p><p class="note">일반 상품을 눌렀거나, 클릭 뒤 URL에서 토큰이 빠졌습니다(파라미터 체이닝 단절). '
-      + '이 상태에서 구매하면 매출은 생기지만 어느 광고 덕분인지 알 수 없어 그 광고의 ROAS가 실제보다 낮게 잡힙니다.</p>';
+      + '로그인 상태로 사면 서버가 이 사용자의 클릭 기록으로 다시 이어 줍니다(클로즈드 루프). 로그인도 안 했다면 매출은 생기지만 어느 광고 덕분인지 알 수 없어 그 광고의 ROAS가 실제보다 낮게 잡힙니다.</p>';
   }
 
   const request = JSON.parse(localStorage.getItem('demo.request') || '{}');
   const userId = request.userId || 'demo-user';
+
+  // ⑨ 전환: 토큰(파라미터 체이닝)과 로그인 사용자 ID, 두 단서를 보냅니다.
+  const PATH_TEXT = {
+    TOKEN: 'URL로 이어받은 토큰의 클릭',
+    USER_HISTORY: '로그인 사용자의 클릭 기록(클로즈드 루프)',
+  };
+  const REASON_TEXT = {
+    NO_IDENTITY: '토큰도 로그인도 없어 누구의 구매인지 모름',
+    NO_CLICK: '이 상품 광고를 누른 기록이 없음',
+    OUTSIDE_WINDOW: '마지막 클릭이 7일보다 오래됨',
+  };
+  document.getElementById('buy').onclick = async () => {
+    const q = new URLSearchParams({ orderId: crypto.randomUUID(), productId, amount: product.price });
+    if (adToken) q.set('token', adToken);
+    if (document.getElementById('login').checked) q.set('userId', userId);
+    const r = await (await fetch('/events/conversion?' + q, { method: 'POST' })).json();
+    const box = document.getElementById('buyResult');
+    box.className = r.adId ? '' : 'loss';
+    box.textContent = r.adId
+      ? '광고 #' + r.adId + '에 귀속: ' + PATH_TEXT[r.attributedBy] + ' (클릭 ' + r.clickId + ')'
+      : '귀속 안 됨: ' + (REASON_TEXT[r.reason] || r.reason) + '. 매출 ' + r.amount.toLocaleString() + '원은 "광고와 무관한 매출"로 남습니다.';
+  };
+
   await fetch('/signals/viewed-brand?userId=' + encodeURIComponent(userId) + '&brand=' + encodeURIComponent(product.brand), { method: 'POST' });
   document.getElementById('signal').textContent = userId + '이(가) ' + product.brand + ' 상품을 봤다는 신호를 남겼습니다. '
     + '목록으로 돌아가 개인화를 켠 채 새로 받으면 ' + product.brand + ' 광고의 pCTR이 2배로 계산됩니다.';

@@ -24,14 +24,18 @@
      화면에 50% 1초 보임 ── POST /events/impression {token, VIEWABLE} ─┤
   ⑧ 클릭(sendBeacon)   ── GET /events/click?token ──────────────────┤  토큰 검증, 봇(GIVT) 거름
         └─▶ 상품 페이지로 리다이렉트, URL에 토큰을 이어 붙임            │
-  ⑨ 구매               ── POST /events/conversion {token, 금액} ─────┤  3  conversion/
-                          마지막 클릭 기준, 클릭 후 7일 안이면 귀속     ▼
+        클릭은 사용자별 클릭 기록(ads:clicks:{사용자})에도 남음                ▼
                        Redis Streams: hash(adId) % 4 개 스트림(파티션 흉내)
                                                                      │
   ⑩ 과금 컨슈머(파티션마다 하나)                                       ▼  4  billing/
        재전송? → 부정 클릭(10초)? → 예산 부족? → 과금
        장부 INSERT(click_id 유니크) + 예산 UPDATE = 한 트랜잭션, 커밋 후 ACK
        소진되면 Redis에 소진 표시 ─▶ 서빙 ①이 읽음
+                                                                     │
+  ⑨ 구매 ── POST /events/conversion {주문, 상품, 금액, token?, userId?}       3  conversion/
+       구매자 찾기: URL 토큰의 사용자(TOKEN) 또는 로그인 사용자(USER_HISTORY, 클로즈드 루프)
+       그 사용자 클릭 기록에서 같은 상품, 구매 전 7일 안의 마지막 클릭에 귀속 → conversions 테이블
+       (주문 ID 기본 키로 같은 주문은 한 번만)
                                                                      │
      대사와 성과 리포트                                                ▼  5  reconcile/
        클릭 수 = 과금 + 무과금(사유별), 장부 합계 = 예산 차감액
@@ -76,21 +80,26 @@ CLAUDE.md 3장의 개념을 전부 올립니다. 구현하지 않는 개념도 �
 
 | 개념 | 어떻게 만져 보나 | 상태 |
 |---|---|---|
-| 어트리뷰션, 마지막 클릭, 어트리뷰션 윈도우 (3-7) | 클릭 후 7일 경계 안팎의 구매 | 예정 |
-| 체이닝 단절의 결과 (3-13) | 토큰이 빠지면 구매가 어느 광고에도 귀속되지 않음 | 예정 |
+| 어트리뷰션, 마지막 클릭, 어트리뷰션 윈도우 (3-7) | 같은 상품 광고 클릭 중 구매 전 7일 안의 마지막 것. 정확히 7일은 귀속, 1초 넘으면 OUTSIDE_WINDOW (`Attribution`) | 완료 |
+| 체이닝 단절의 결과 (3-13) | 토큰이 빠지고 로그인도 없으면 NONE, "광고와 무관한 매출"로 남아 ROAS가 낮게 잡힘 | 완료 |
+| 클로즈드 루프 (3-1) | 토큰이 빠져도 로그인 사용자면 클릭 기록으로 다시 이어 귀속(USER_HISTORY) (`ConversionService`) | 완료 |
+| 전환 멱등성 | 같은 주문 ID 두 번 → 매출 한 번 (`conversions.order_id` 기본 키) | 완료 |
+| 할로 효과(같은 브랜드 다른 상품 구매) (3-7) | 같은 상품만 귀속. 다른 상품 구매는 NO_CLICK | 설명만 |
 | view-through 전환 (3-7) | 클릭 없는 노출 후 구매는 귀속하지 않음. 귀속 규칙을 공개해야 한다는 가이드라인과 함께 설명 | 설명만 |
 
 ### 과금, 대사, 성과 (4·5단계)
 
 | 개념 | 어떻게 만져 보나 | 상태 |
 |---|---|---|
-| CPC 과금, 멱등성, 부정 클릭(SIVT 흉내) (3-8, 3-11) | 3-11 규칙 전부와 기본 예시 c1~c7 | 예정 |
-| 예산 소진, 초과 집행 (3-5) | 소진 표시 지연 동안의 초과 집행 측정 | 예정 |
-| 이벤트 시간 vs 처리 시간 (3-10) | 늦게 도착한 클릭 시나리오 | 예정 |
-| 파티션으로 단일 처리 (3-10, 3-11) | 잘못된 구성(컨슈머 2개)과 파티션 구성 대조 실험 | 예정 |
+| CPC 과금, 멱등성, 부정 클릭(SIVT 흉내) (3-8, 3-11) | 기본 예시 c1~c7을 순수 규칙과 실제 스트림 둘 다로 재현. 결과 A=400, B=0 (`ClickBilling`, `BillingConsumer`) | 완료 |
+| 커밋 후 ACK, 재배달 vs 재전송 (3-10, 3-11) | 커밋 직후 ACK 전에 죽고 재시작해도 과금 1번. 같은 스트림 항목이면 재배달(ACK만), 같은 clickId의 새 항목이면 재전송(DUPLICATE) | 완료 |
+| 메모리 상태는 장부의 사본 (3-11) | 재시작하면 잔액과 10초 창을 장부에서 다시 만듦 | 완료 |
+| 예산 소진, 소진 표시 지연 (3-5) | 소진 표시 후에도 스냅샷이 바뀌기 전에 나간 광고의 클릭은 BUDGET_EXHAUSTED(미청구) | 완료 |
+| 이벤트 시간 vs 처리 시간 (3-10) | 늦게 도착한 정상 클릭이 무과금되는 한계를 테스트로 고정 | 완료(한계 기록) |
+| 파티션으로 단일 처리 (3-10, 3-11) | 한 파티션을 컨슈머 둘이 나눠 읽으면 예산 300에 600 과금, 하나면 300 | 완료 |
 | 대사, 원장 (3-9) | 클릭 수, 과금, 무과금 사유, 장부 금액, 예산 차감액 비교 | 예정 |
 | CTR, 노출 유실이 CTR을 부풀림 (3-3) | 렌더링 기준 CTR과 viewable 기준 CTR 비교 | 예정 |
-| ROAS (3-3) | 광고별 전환 매출 ÷ 광고비 | 예정 |
+| ROAS (3-3) | 3단계: 귀속 매출 ÷ 추정 광고비(클릭마다 낙찰 CPC, 재전송 제외) (`/conversions/stats`). 5단계: 장부의 실제 광고비로 다시 계산 | 추정 완료, 실제는 예정 |
 
 ### 하지 않는 것
 
@@ -112,6 +121,9 @@ CLAUDE.md 3장의 개념을 전부 올립니다. 구현하지 않는 개념도 �
 |---|---|---|
 | [광고 서빙 한 번: GET /ads](docs/diagrams/serving.html) (시퀀스) | 1 | `docs/diagrams/src/serving.sequence.json` |
 | [측정 경로: 노출과 클릭이 스트림에 쌓이기까지](docs/diagrams/measurement.html) (데이터 흐름) | 2 | `docs/diagrams/src/measurement.dataflow.json` |
+| [구매는 어느 광고 덕분인가: 클릭에서 귀속까지](docs/diagrams/attribution.html) (시퀀스) | 3 | `docs/diagrams/src/attribution.sequence.json` |
+| [클릭 한 건의 과금 판정](docs/diagrams/billing.html) (상태 전이) | 4 | `docs/diagrams/src/billing.lifecycle.json` |
+| [테이블과 키](docs/diagrams/schema.html) (ERD) | 4 | `docs/diagrams/src/schema.erd.json` |
 
 GitHub 화면에서는 HTML이 그림으로 보이지 않습니다. 파일을 내려받거나 저장소를 받은 뒤 브라우저로 여세요. 노드를 누르면 근거가 된 코드 위치가 나옵니다.
 
@@ -191,7 +203,7 @@ curl -s 'localhost:8080/serving/stats' | python3 -m json.tool
    CLICK의 "유실" 칸이 누른 횟수만큼 빨갛게 늘어납니다. "sendBeacon"이나 "클릭 URL"로 바꾸면 유실이 0입니다.
    (실측: fetch 3번 → 서버 0건, sendBeacon 3번 → 3건, 클릭 URL 1번 → 1건)
 3. **파라미터 체이닝**: 광고를 누르면 상품 페이지 URL에 `adToken`이 붙어 오고, 페이지가 토큰 내용(광고, 낙찰가, 사용자)을 보여줍니다.
-   "토큰 이어 붙이기"를 끄고 누르면 "광고 유입 정보가 없습니다"가 나옵니다. 3단계에서 이 상태의 구매는 어느 광고에도 귀속되지 않습니다.
+   "토큰 이어 붙이기"를 끄고 누르면 "광고 유입 정보가 없습니다"가 나옵니다. 이 상태의 구매가 어떻게 되는지는 3단계에서 봅니다.
 4. **측정이 서빙으로 돌아오는 고리**: 같은 사용자로 "목록 새로 받기"를 세 번 누르면, 네 번째부터 같은 광고가 사라지고 "제외 #2 FREQUENCY_CAP"이 보입니다(렌더링 노출 3번 = 피로도 상한).
    상품 페이지를 한 번 보고 오면 그 브랜드 광고가 개인화로 1등이 됩니다.
 5. **GIVT**: 봇처럼 보내면 걸러집니다. 토큰은 `GET /ads` 응답에서 복사합니다.
@@ -203,3 +215,44 @@ curl -s 'localhost:8080/serving/stats' | python3 -m json.tool
 6. **광고 차단(수동)**: 광고 차단 확장을 켜고 데모를 열어, 개발자 도구 Network 탭에서 `/ads`, `/events/...` 요청이 막히는지 봅니다.
 
 자동 테스트: `./gradlew test --tests 'ads.event.*'`
+
+### 3단계: 전환과 ROAS
+
+데모에서 광고를 누르고 상품 페이지의 **구매하기**를 누릅니다. 결과에 "어느 광고에, 어떤 경로로 귀속됐는지"가 나옵니다.
+목록 화면의 "토큰 이어 붙이기"와 상품 페이지의 "로그인 상태로 구매"를 바꿔 가며 세 경우를 비교합니다.
+
+| 토큰 이어 붙이기 | 로그인 | 결과 | 보이는 개념 |
+|---|---|---|---|
+| 켬 | 끔 | 광고 #2에 귀속, TOKEN 경로 | 파라미터 체이닝으로 이어진 클릭 |
+| 끔 | 켬 | 광고 #2에 귀속, USER_HISTORY 경로 | 클로즈드 루프: 토큰이 끊겨도 로그인 구매자의 클릭 기록으로 다시 이음 |
+| 끔 | 끔 | 귀속 안 됨(NO_IDENTITY) | 누구의 구매인지 몰라 "광고와 무관한 매출"이 됨 |
+
+세 번 사고 `http://localhost:8080/conversions/stats`를 열면 광고 #2의 귀속 매출 178,000원, 추정 광고비 1,230원(클릭 3번 × 410원),
+추정 ROAS 약 145배가 보이고, 귀속되지 않은 매출 89,000원이 따로 보입니다. 셋 다 귀속됐다면 ROAS는 약 217배였습니다.
+**체이닝이 한 번 끊긴 것만으로 이 광고의 성과가 3분의 1 낮게 측정**됩니다.
+
+시간 경계(7일)는 브라우저로 기다릴 수 없어 자동 테스트로 확인합니다: `./gradlew test --tests 'ads.conversion.*'`
+
+### 4단계: 과금 컨슈머
+
+앱을 띄우면 파티션마다 과금 컨슈머가 하나씩(4개) 돌며 1초마다 스트림을 읽습니다(`ads.billing.poll-ms`). 로그의 `[billing]` 줄에 클릭마다 판정이 찍힙니다.
+
+```bash
+# 1) 광고 토큰 하나를 받는다(첫 광고 #2, 낙찰 CPC 410원)
+TOKEN=$(curl -s 'localhost:8080/ads?category=shoes&userId=w1' | python3 -c "import sys,json; print([i for i in json.load(sys.stdin)['items'] if i['type']=='AD'][0]['token'])")
+```
+
+```bash
+# 2) 같은 클릭 k1을 두 번(재전송), 곧바로 다른 클릭 k2(10초 안)를 보낸다
+for c in k1 k1 k2; do curl -s -X POST -A 'Mozilla/5.0' "localhost:8080/events/click?token=$TOKEN&clickId=$c&eventTime=$(date +%s%3N)"; done
+```
+
+```bash
+# 3) 1~2초 뒤 과금 결과: 광고 #2 charged 1, duplicate 1, invalid_click 1, spent = ledger_charged = 410
+curl -s localhost:8080/billing/stats | python3 -m json.tool
+```
+
+장애 상황(커밋 후 ACK 전에 죽음, 컨슈머 둘이 한 파티션을 나눠 읽음, 늦게 도착한 클릭, 소진 표시 지연)은 브라우저로 만들기 어려워 자동 테스트로 재현합니다.
+테스트 이름이 곧 시나리오입니다: `./gradlew test --tests 'ads.billing.*'`
+
+참고: 테스트는 로컬 DB의 장부와 전환 기록을 지우고 시작합니다. 데모로 쌓은 숫자를 보존하려면 테스트 전에 확인하세요.
