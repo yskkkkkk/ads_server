@@ -134,7 +134,10 @@ PAM의 `deploy-backend.yml` 구조(빌드 → GHCR push → SSH pull/run → 오
 - 서버에 Postgres, Redis 컨테이너를 같이 띄우지 않습니다. 1GB에 JVM과 함께 올리면 스왑으로 버티게 됩니다. Neon, Upstash를 씁니다.
 - Neon: PAM 데이터베이스와 **분리**합니다(새 데이터베이스나 새 프로젝트). 같은 DB를 쓰면 Flyway 이력 테이블(`flyway_schema_history`)이 겹쳐 버전 번호가 충돌합니다.
 - Upstash: PAM을 완전히 내리면 같은 인스턴스를 써도 되지만, 그래도 키 접두사는 `ads:`로 둡니다.
-- **[확인 필요, 2단계 전] Upstash와 Redis Streams.** PAM은 Redis를 요청이 올 때만 썼습니다. 이 저장소의 과금 컨슈머는 스트림 4개를 계속 읽으므로 요청이 없어도 명령이 나갑니다. Upstash 무료 플랜의 명령 수 한도와 `XREADGROUP BLOCK` 동작을 배포 전에 확인합니다.
+- **[확인 필요, 첫 배포 전] Upstash와 Redis Streams.** PAM은 Redis를 요청이 올 때만 썼습니다. 이 저장소의 과금 컨슈머는 스트림 4개를 계속 읽으므로 요청이 없어도 명령이 나갑니다.
+  - 4단계에서 `XREADGROUP BLOCK`은 쓰지 않기로 했습니다. 짧게 읽고 `poll-ms`만큼 쉬는 방식이라 명령 수를 직접 조절합니다(`docs/tradeoffs.md` 17).
+  - 한가할 때 명령 수 = 파티션 4 × (86,400초 ÷ poll 초). 기본값 1초면 하루 약 345,600개, `BILLING_POLL_MS=10000`이면 약 34,560개입니다.
+  - Upstash 무료 플랜의 현재 명령 수 한도는 배포 전에 요금 문서에서 확인하고 `BILLING_POLL_MS`를 정합니다. 과금은 측정 경로라 10초 늦어도 됩니다.
 
 ### 5-5. 도메인
 
@@ -173,6 +176,7 @@ DB_USERNAME=<Neon 사용자>
 DB_PASSWORD=<Neon 비밀번호>
 REDIS_URL=rediss://default:<Upstash 비밀번호>@<Upstash 호스트>:6379
 TOKEN_SECRET=<임의의 긴 문자열, 노출 토큰 서명 키>
+BILLING_POLL_MS=10000
 ```
 
 `chmod 600 ~/ads.env`로 다른 사용자가 읽지 못하게 둡니다.

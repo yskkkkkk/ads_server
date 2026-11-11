@@ -36,3 +36,7 @@ ads:
     circuit-open-ms: 10000         # 서킷을 열어 두는 시간
     max-debug-delay-ms: 200        # 장애 주입(debugDelayMs) 상한
     catalog-refresh-ms: 5000       # 광고 카탈로그 스냅샷 새로 고침 주기
+  billing:
+    enabled: ${BILLING_ENABLED:true}   # 과금 컨슈머를 띄울지. 테스트는 끄고 컨슈머를 직접 돌린다
+    poll-ms: ${BILLING_POLL_MS:1000}   # 스트림을 읽고 쉬는 간격. 원격 Redis 명령 수 = 파티션 4 × (1초 / 이 값)
+    batch-size: 50                     # 한 번에 읽는 항목 수

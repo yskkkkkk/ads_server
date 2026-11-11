@@ -91,10 +91,12 @@ CLAUDE.md 3장의 개념을 전부 올립니다. 구현하지 않는 개념도 �
 
 | 개념 | 어떻게 만져 보나 | 상태 |
 |---|---|---|
-| CPC 과금, 멱등성, 부정 클릭(SIVT 흉내) (3-8, 3-11) | 3-11 규칙 전부와 기본 예시 c1~c7 | 예정 |
-| 예산 소진, 초과 집행 (3-5) | 소진 표시 지연 동안의 초과 집행 측정 | 예정 |
-| 이벤트 시간 vs 처리 시간 (3-10) | 늦게 도착한 클릭 시나리오 | 예정 |
-| 파티션으로 단일 처리 (3-10, 3-11) | 잘못된 구성(컨슈머 2개)과 파티션 구성 대조 실험 | 예정 |
+| CPC 과금, 멱등성, 부정 클릭(SIVT 흉내) (3-8, 3-11) | 기본 예시 c1~c7을 순수 규칙과 실제 스트림 둘 다로 재현. 결과 A=400, B=0 (`ClickBilling`, `BillingConsumer`) | 완료 |
+| 커밋 후 ACK, 재배달 vs 재전송 (3-10, 3-11) | 커밋 직후 ACK 전에 죽고 재시작해도 과금 1번. 같은 스트림 항목이면 재배달(ACK만), 같은 clickId의 새 항목이면 재전송(DUPLICATE) | 완료 |
+| 메모리 상태는 장부의 사본 (3-11) | 재시작하면 잔액과 10초 창을 장부에서 다시 만듦 | 완료 |
+| 예산 소진, 소진 표시 지연 (3-5) | 소진 표시 후에도 스냅샷이 바뀌기 전에 나간 광고의 클릭은 BUDGET_EXHAUSTED(미청구) | 완료 |
+| 이벤트 시간 vs 처리 시간 (3-10) | 늦게 도착한 정상 클릭이 무과금되는 한계를 테스트로 고정 | 완료(한계 기록) |
+| 파티션으로 단일 처리 (3-10, 3-11) | 한 파티션을 컨슈머 둘이 나눠 읽으면 예산 300에 600 과금, 하나면 300 | 완료 |
 | 대사, 원장 (3-9) | 클릭 수, 과금, 무과금 사유, 장부 금액, 예산 차감액 비교 | 예정 |
 | CTR, 노출 유실이 CTR을 부풀림 (3-3) | 렌더링 기준 CTR과 viewable 기준 CTR 비교 | 예정 |
 | ROAS (3-3) | 3단계: 귀속 매출 ÷ 추정 광고비(클릭마다 낙찰 CPC, 재전송 제외) (`/conversions/stats`). 5단계: 장부의 실제 광고비로 다시 계산 | 추정 완료, 실제는 예정 |
@@ -120,6 +122,8 @@ CLAUDE.md 3장의 개념을 전부 올립니다. 구현하지 않는 개념도 �
 | [광고 서빙 한 번: GET /ads](docs/diagrams/serving.html) (시퀀스) | 1 | `docs/diagrams/src/serving.sequence.json` |
 | [측정 경로: 노출과 클릭이 스트림에 쌓이기까지](docs/diagrams/measurement.html) (데이터 흐름) | 2 | `docs/diagrams/src/measurement.dataflow.json` |
 | [구매는 어느 광고 덕분인가: 클릭에서 귀속까지](docs/diagrams/attribution.html) (시퀀스) | 3 | `docs/diagrams/src/attribution.sequence.json` |
+| [클릭 한 건의 과금 판정](docs/diagrams/billing.html) (상태 전이) | 4 | `docs/diagrams/src/billing.lifecycle.json` |
+| [테이블과 키](docs/diagrams/schema.html) (ERD) | 4 | `docs/diagrams/src/schema.erd.json` |
 
 GitHub 화면에서는 HTML이 그림으로 보이지 않습니다. 파일을 내려받거나 저장소를 받은 뒤 브라우저로 여세요. 노드를 누르면 근거가 된 코드 위치가 나옵니다.
 
@@ -228,3 +232,27 @@ curl -s 'localhost:8080/serving/stats' | python3 -m json.tool
 **체이닝이 한 번 끊긴 것만으로 이 광고의 성과가 3분의 1 낮게 측정**됩니다.
 
 시간 경계(7일)는 브라우저로 기다릴 수 없어 자동 테스트로 확인합니다: `./gradlew test --tests 'ads.conversion.*'`
+
+### 4단계: 과금 컨슈머
+
+앱을 띄우면 파티션마다 과금 컨슈머가 하나씩(4개) 돌며 1초마다 스트림을 읽습니다(`ads.billing.poll-ms`). 로그의 `[billing]` 줄에 클릭마다 판정이 찍힙니다.
+
+```bash
+# 1) 광고 토큰 하나를 받는다(첫 광고 #2, 낙찰 CPC 410원)
+TOKEN=$(curl -s 'localhost:8080/ads?category=shoes&userId=w1' | python3 -c "import sys,json; print([i for i in json.load(sys.stdin)['items'] if i['type']=='AD'][0]['token'])")
+```
+
+```bash
+# 2) 같은 클릭 k1을 두 번(재전송), 곧바로 다른 클릭 k2(10초 안)를 보낸다
+for c in k1 k1 k2; do curl -s -X POST -A 'Mozilla/5.0' "localhost:8080/events/click?token=$TOKEN&clickId=$c&eventTime=$(date +%s%3N)"; done
+```
+
+```bash
+# 3) 1~2초 뒤 과금 결과: 광고 #2 charged 1, duplicate 1, invalid_click 1, spent = ledger_charged = 410
+curl -s localhost:8080/billing/stats | python3 -m json.tool
+```
+
+장애 상황(커밋 후 ACK 전에 죽음, 컨슈머 둘이 한 파티션을 나눠 읽음, 늦게 도착한 클릭, 소진 표시 지연)은 브라우저로 만들기 어려워 자동 테스트로 재현합니다.
+테스트 이름이 곧 시나리오입니다: `./gradlew test --tests 'ads.billing.*'`
+
+참고: 테스트는 로컬 DB의 장부와 전환 기록을 지우고 시작합니다. 데모로 쌓은 숫자를 보존하려면 테스트 전에 확인하세요.
