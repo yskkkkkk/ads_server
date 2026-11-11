@@ -9,7 +9,7 @@
     "repository": {
       "url": "https://github.com/yskkkkkk/ads_server",
       "provider": "github",
-      "revision": "1113930cb7b62674aebf665e075757e6156ce7bf"
+      "revision": "764741f63da61e7d59c4b8afe25f643ce4335c8c"
     }
   },
   "stages": [
@@ -267,8 +267,25 @@
       "sources": [
         {
           "path": "src/main/java/ads/billing/BillingConsumer.java",
-          "line": 94,
-          "end_line": 116,
+          "line": 80,
+          "end_line": 89,
+          "label": "pollOnce()"
+        }
+      ]
+    },
+    {
+      "id": "eventlog",
+      "type": "backend",
+      "label": "EventLogConsumer",
+      "sublabel": "event_log → /reports",
+      "stage": 4,
+      "row": 4,
+      "tag": "5단계",
+      "sources": [
+        {
+          "path": "src/main/java/ads/reconcile/EventLogConsumer.java",
+          "line": 75,
+          "end_line": 93,
           "label": "pollOnce()"
         }
       ]
@@ -370,6 +387,14 @@
       "label": "CLICK 항목",
       "classification": "그룹 billing · XACK",
       "variant": "emphasis"
+    },
+    {
+      "id": "stats-read",
+      "from": "streams",
+      "to": "eventlog",
+      "label": "모든 항목",
+      "classification": "그룹 stats · 순서 무관",
+      "variant": "default"
     }
   ],
   "cards": [
@@ -388,7 +413,8 @@
       "items": [
         "클릭은 같은 clickId가 두 번 와도 스트림에 둘 다 넣음",
         "과금 컨슈머(4단계)가 파티션마다 하나씩 읽어 장부 트랜잭션에서 판정",
-        "클릭은 사용자별 클릭 기록에도 남아 3단계 어트리뷰션이 읽음"
+        "클릭은 사용자별 클릭 기록에도 남아 3단계 어트리뷰션이 읽음",
+        "같은 스트림을 집계 컨슈머(그룹 stats)가 따로 읽어 원본을 쌓고, 5단계 대사가 장부와 맞춰 봄"
       ]
     },
     {
